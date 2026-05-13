@@ -31,7 +31,7 @@ annotate_epi_peaks(
 or "csAnno" (returns the raw ChIPseeker S4 object for plotting).}
 }
 \value{
-A data.frame or a csAnno object depending on `return_format`.
+A data.frame or a csAnno object depending on \code{return_format}.
 }
 \description{
 Maps consensus peaks or shape-shifted regions (e.g., broad H3K27ac domains)

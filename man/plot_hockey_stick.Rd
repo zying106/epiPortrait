@@ -24,7 +24,7 @@ plot_hockey_stick(
 A ggplot object.
 }
 \description{
-Generates a ROSE-style ranking plot. Peaks are ranked by their feature 
-value (Intensity, Width, or Height). Super-domains above the inflection point 
+Generates a ROSE-style ranking plot. Peaks are ranked by their feature
+value (Intensity, Width, or Height). Super-domains above the inflection point
 are highlighted.
 }

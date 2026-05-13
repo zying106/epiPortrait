@@ -42,9 +42,9 @@ Imports:
     ggrepel,
     limma,
     moments,
-    stats,
-    methods
+    stats
 Suggests:
+    AnnotationHub,
     BiocStyle,
     HDF5Array,
     cowplot,

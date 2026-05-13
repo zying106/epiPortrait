@@ -10,7 +10,9 @@ build_portrait_matrix(
   workers = 1,
   bg_quantile = 0.1,
   on_disk = FALSE,
-  h5_dir = "epiPortrait_h5"
+  h5_dir = "epiPortrait_h5",
+  cache_dir = NULL,
+  custom_features = NULL
 )
 }
 \arguments{
@@ -27,6 +29,15 @@ excluded from skewness calculation to filter out background noise (Valley Trap).
 which is highly recommended for mammalian-scale BigWig processing.}
 
 \item{h5_dir}{Character. Directory to store HDF5 files if \code{on_disk = TRUE}.}
+
+\item{cache_dir}{Character or NULL. If provided, caches per-sample coverage views
+as RDS files in this directory. Subsequent calls with the same BigWig + consensus
+peaks + \code{bg_quantile} combination skip BigWig I/O entirely (default: NULL).}
+
+\item{custom_features}{A named list of functions. Each function must accept a
+single \code{NumericList} (the coverage view for one peak) and return a single
+numeric value. Results are added as additional assays alongside the core 4D
+dimensions (e.g., \code{list(Entropy = function(x) ...)}).}
 }
 \value{
 A \code{SummarizedExperiment} object containing 4 assays (The Portrait matrix).

@@ -39,3 +39,14 @@
 #' @docType package
 #' @name epiPortrait
 "_PACKAGE"
+
+utils::globalVariables(c(
+  "Rank", "Value", "Type", "SYMBOL",
+  "Feature", "ScaledValue", "Group",
+  "Score", "Sample1", "Sample2", "Correlation",
+  "PC1", "PC2", "SampleID",
+  "logFC", "LogP", "Log10_Width", "Skewness_Shift", "Significance",
+  "Mean", "SEM",
+  "n", "power", "eta2_label", "power_se",
+  "GenomicPos", "Y", "chr_color", "Is_Sig"
+))

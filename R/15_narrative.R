@@ -3,7 +3,7 @@
 #' @description Synthesises classified shape-shift results into a structured,
 #' human-readable narrative suitable for a manuscript results section. Includes
 #' top-level summary statistics, per-class biological interpretation, gene-level
-#' examples, and suggested follow-up experiments. No AI-generated fluff—every
+#' examples, and suggested follow-up experiments. No AI-generated fluff -- every
 #' sentence is backed by numbers from your data.
 #'
 #' @param shift_res A data.frame from \code{classify_shape_shift()} containing
@@ -173,7 +173,7 @@ summarize_findings <- function(shift_res, se = NULL,
   if ("Polarity_Shift" %in% names(class_counts) && class_counts["Polarity_Shift"] > 3) {
     follow_up_lines <- c(follow_up_lines,
       "- **Polarity Shift events**: Examine the direction of skewness relative to",
-      "  annotated TSS orientation—unidirectional shifts may suggest enhancer",
+      "  annotated TSS orientation -- unidirectional shifts may suggest enhancer",
       "  scanning or transcriptional read-through.")
   }
   if (n_sig > 20) {

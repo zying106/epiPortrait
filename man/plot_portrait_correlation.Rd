@@ -12,9 +12,10 @@ plot_portrait_correlation(se, feature = "Intensity")
 \item{feature}{Character. The assay to use (default: "Intensity").}
 }
 \value{
-A heatmap (pheatmap or ggplot object).
+A ggplot object.
 }
 \description{
 Computes and visualizes the Pearson correlation between samples based
-on their geometric portraits.
+on their geometric portraits. Returns a ggplot object consistent with the rest of the
+epiPortrait visualization suite.
 }

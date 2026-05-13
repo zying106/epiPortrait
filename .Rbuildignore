@@ -4,3 +4,4 @@
 ^R/.*\.Rhistory$
 ^vignettes/.*\.RData$
 ^man/figures/.*_unused\.png$
+^\.claude$

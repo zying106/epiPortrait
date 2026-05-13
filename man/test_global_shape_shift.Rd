@@ -6,28 +6,43 @@
 \usage{
 test_global_shape_shift(
   se,
+  formula = NULL,
   group_var = "Condition",
   block_var = NULL,
+  term = NULL,
+  test = "Pillai",
   workers = 1
 )
 }
 \arguments{
 \item{se}{A SummarizedExperiment object from build_portrait_matrix().}
 
-\item{group_var}{Character string specifying the column in colData(se) containing the grouping variable.}
+\item{formula}{A formula specifying the full model design (e.g.,
+\code{~ genotype * treatment + batch}). If \code{NULL} (default), falls
+back to the simple \code{group_var} + \code{block_var} interface.}
 
-\item{block_var}{Character string or NULL. If provided, specifies a blocking variable in colData(se)
-(e.g., patient ID, batch) to include as a covariate in the MANOVA model, enabling paired or
-blocked multi-dimensional comparisons.}
+\item{group_var}{Character. Column in \code{colData(se)} with the grouping
+variable. Only used when \code{formula = NULL}.}
+
+\item{block_var}{Character or NULL. Optional blocking variable for paired
+designs. Only used when \code{formula = NULL}.}
+
+\item{term}{Character. The model term to extract as the Shape_Shift_Score.
+Default \code{NULL} auto-selects the last term in the formula (typically
+the effect of interest).}
+
+\item{test}{Character. MANOVA test statistic: \code{"Pillai"} (default),
+\code{"Wilks"}, \code{"Hotelling-Lawley"}, or \code{"Roy"}.}
 
 \item{workers}{Number of threads for parallel processing (default: 1).}
 }
 \value{
-A data.frame containing the Shape_Shift_Score and multivariate P-values.
+A data.frame containing \code{Shape_Shift_Score}, \code{partial_eta_sq}
+(effect size), multivariate P-values, and BH-adjusted P-values.
 }
 \description{
 Evaluates the simultaneous shift in multiple geometric dimensions
-(Width, Intensity, Height, Skewness) between experimental groups using MANOVA.
-Automatically handles zero-variance dimensions (e.g., fixed widths) and uses
-parallel computing for extreme performance.
+(Width, Intensity, Height, Skewness) between experimental conditions using MANOVA.
+Supports both simple two-group comparisons (\code{group_var}) and complex
+multi-factor designs (\code{formula}).
 }

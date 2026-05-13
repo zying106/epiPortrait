@@ -114,7 +114,7 @@ filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000, downstre
   # Guard: catch UCSC vs Ensembl chromosome naming mismatches before silent failure
   common_seqs <- intersect(seqlevels(gr), seqlevels(promoters_gr))
   if (length(common_seqs) == 0) {
-    warning("⚠️ NO overlapping chromosome names found between your peaks (e.g., '",
+    warning("NO overlapping chromosome names found between your peaks (e.g., '",
             seqlevels(gr)[1], "') and the reference genome (e.g., '", seqlevels(promoters_gr)[1], "').\n",
             "This usually happens when mixing UCSC ('chr1') and Ensembl ('1') formats. ",
             "Promoter filtering might silently fail to remove any peaks!")
@@ -230,7 +230,7 @@ normalize_portrait <- function(se, method = "TotalSignal", force_TMM = FALSE) {
     norm_h <- limma::normalizeBetweenArrays(h_mat, method = "quantile")
 
   } else if (method == "Z-score") {
-    message("⚠️ Note: Z-score is recommended for heatmaps/clustering, but NOT for downstream differential testing (limma).")
+    message("Note: Z-score is recommended for heatmaps/clustering, but NOT for downstream differential testing (limma).")
 
     # Row-wise (per-peak) standardization: (x - mean) / sd
     norm_int <- t(scale(t(int_mat)))
@@ -364,7 +364,7 @@ export_shifted_bed <- function(res_df, file = "epiPortrait_shifted_peaks.bed",
   }
 
   # 4. Build standard 6-column BED: chr, start, end, name, score, strand
-  # BED is 0-based; R/Bioc is 1-based — subtract 1 from start on export
+  # BED is 0-based; R/Bioc is 1-based -- subtract 1 from start on export
   export_df <- data.frame(
     chrom = bed_data$seqnames,
     start = as.integer(bed_data$start) - 1,

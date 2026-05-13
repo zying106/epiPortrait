@@ -45,11 +45,11 @@ simulate_power <- function(n_range = 3:10,
   )
   grid <- grid[order(grid$eta2, grid$n), ]
 
-  message(sprintf("Simulating power for %d conditions × %d replicates = %d MANOVA runs...",
+  message(sprintf("Simulating power for %d conditions x %d replicates = %d MANOVA runs...",
                   nrow(grid), n_sim, nrow(grid) * n_sim))
 
   # Pre-compute the mean-shift vector for each eta2 value
-  # For k dimensions with equal effect: eta2_pillai ≈ (d^2 * k) / (d^2 * k + 4*k)
+  # For k dimensions with equal effect: eta2_pillai ~ (d^2 * k) / (d^2 * k + 4*k)
   # Simplified calibration: d = sqrt(4 * eta2 / (1 - eta2))
   shift_cache <- vapply(eta2_range, function(e2) {
     d <- sqrt(4 * e2 / max(1 - e2, 1e-8))

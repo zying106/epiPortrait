@@ -4,7 +4,7 @@
 #' (Width, Intensity, Height, Skewness) deviates from the population distribution
 #' using the Mahalanobis distance. Supports both classic (sample covariance) and
 #' robust (Minimum Covariance Determinant) estimators. Unlike MANOVA-based shape
-#' shift testing, this does not require group labels — it detects intrinsically
+#' shift testing, this does not require group labels -- it detects intrinsically
 #' unusual conformations, making it suitable for single-sample analysis and QC.
 #'
 #' @param se A \code{SummarizedExperiment} from \code{build_portrait_matrix()}.
@@ -22,18 +22,18 @@
 #' @return A \code{data.frame} with columns:
 #'   \item{seqnames, start, end, Peak_ID}{Genomic coordinates.}
 #'   \item{Mahalanobis_D2}{Squared Mahalanobis distance.}
-#'   \item{P.Value}{P-value from χ²(4).}
+#'   \item{P.Value}{P-value from chi-squared distribution with 4 df.}
 #'   \item{adj.P.Val}{BH-adjusted P-value.}
 #'   \item{Outlier_Flag}{Logical; TRUE if adj.P.Val < 0.05.}
 #'   Sorted by ascending adj.P.Val.
 #'
 #' @details
 #' The four features are first collapsed per-domain across samples (via
-#' \code{collapse_fun}) to produce an N×4 reference matrix. The covariance
+#' \code{collapse_fun}) to produce an N x 4 reference matrix. The covariance
 #' structure is then estimated using either the classic MLE or the MCD
 #' (Minimum Covariance Determinant) robust estimator. The Mahalanobis
 #' distance of each domain to the centroid is computed, and a P-value is
-#' derived from the χ²(4) distribution. For the robust estimator, a
+#' derived from the chi-squared distribution with 4 df. For the robust estimator, a
 #' correction factor based on the MCD consistency factor is applied.
 #'
 #' When \code{ref_samples} is provided, the covariance structure and
@@ -78,7 +78,7 @@ detect_conformational_outliers <- function(se,
     message(sprintf("Using all %d samples as reference.", ncol(se)))
   }
 
-  # ---- Build collapsed 4D matrix (N domains × 4 features) ----------------
+  # ---- Build collapsed 4D matrix (N domains x 4 features) ----------------
   features <- c("Width", "Intensity", "Height", "Skewness")
   n_peaks <- nrow(se)
 
@@ -110,12 +110,12 @@ detect_conformational_outliers <- function(se,
       stop("Package 'robustbase' is required for robust (MCD) estimation. ",
            "Install it with: install.packages('robustbase')")
     }
-    message(sprintf("Computing MCD on %d domains × 4 features...", n_valid))
+    message(sprintf("Computing MCD on %d domains x 4 features...", n_valid))
     mcd_fit <- robustbase::covMcd(ref_mat_valid, alpha = 0.75)
     center  <- mcd_fit$center
     cov_mat <- mcd_fit$cov
     # Consistency correction for chi-squared approximation
-    # MCD consistency factor for h/n ≈ 0.75, p = 4
+    # MCD consistency factor for h/n ~ 0.75, p = 4
     cons_factor <- mcd_fit$cnp2
     message(sprintf("MCD consistency factor: %.3f", cons_factor))
   } else {

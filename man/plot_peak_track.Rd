@@ -27,7 +27,7 @@ plot_peak_track(
 A ggplot object.
 }
 \description{
-Generates a track-like visualization of the raw BigWig coverage for a specific 
-peak across all samples. This allows for direct visual validation of the "Shape Shift" 
+Generates a track-like visualization of the raw BigWig coverage for a specific
+peak across all samples. This allows for direct visual validation of the "Shape Shift"
 detected by epiPortrait.
 }

@@ -9,18 +9,18 @@ call_super_domains(se, feature = "Intensity", sample_id = "Mean")
 \arguments{
 \item{se}{A SummarizedExperiment object.}
 
-\item{feature}{Character. The assay to rank: "Intensity" (to identify Super-Elements), 
+\item{feature}{Character. The assay to rank: "Intensity" (to identify Super-Elements),
 "Width" (to identify Broad-Domains), or "Height" (to identify Steep-Peaks).}
 
-\item{sample_id}{Character. Which sample to use for ranking? Default is "Mean" 
+\item{sample_id}{Character. Which sample to use for ranking? Default is "Mean"
 (averages all samples in the SE).}
 }
 \value{
-A SummarizedExperiment object with additional rowData columns: 
+A SummarizedExperiment object with additional rowData columns:
 '{feature}_Domain_Type' and '{feature}_Rank'.
 }
 \description{
-Implements the ROSE-style ranking algorithm to identify "Super-Element" 
+Implements the ROSE-style ranking algorithm to identify "Super-Element"
 (based on Intensity), "Broad-Domain" (based on Width), or "Steep-Peak" (based on Height).
 It automatically calculates the inflection point of the ranking curve.
 }

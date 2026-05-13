@@ -4,19 +4,23 @@
 \alias{normalize_portrait}
 \title{Normalize Portrait Assays}
 \usage{
-normalize_portrait(se, method = "TotalSignal")
+normalize_portrait(se, method = "TotalSignal", force_TMM = FALSE)
 }
 \arguments{
 \item{se}{A SummarizedExperiment object from build_portrait_matrix().}
 
 \item{method}{Normalization method. Options are:
 \itemize{
-  \item \code{"TotalSignal"}: Scales libraries to the mean total signal.
-  \item \code{"TMM"}: Trimmed Mean of M-values (robust against extreme peaks, uses edgeR).
-  \item \code{"Quantile"}: Forces identical distributions across samples (uses limma).
-  \item \code{"Z-score"}: Standardizes each peak across samples to mean=0, sd=1 (for clustering, not DE).
-  \item \code{"None"}: Skips normalization (use if BigWigs are already CPM/Spike-in scaled).
+\item \code{"TotalSignal"}: Scales libraries to the mean total signal.
+\item \code{"TMM"}: Trimmed Mean of M-values. Designed for count data; use
+\code{force_TMM = TRUE} to apply to continuous BigWig signals anyway.
+\item \code{"Quantile"}: Forces identical distributions across samples (uses limma).
+\item \code{"Z-score"}: Standardizes each peak across samples to mean=0, sd=1 (for clustering, not DE).
+\item \code{"None"}: Skips normalization (use if BigWigs are already CPM/Spike-in scaled).
 }}
+
+\item{force_TMM}{Logical. If \code{TRUE}, allows TMM normalization on continuous
+BigWig signals despite TMM being designed for count data. Default is \code{FALSE}.}
 }
 \value{
 A normalized SummarizedExperiment object.
