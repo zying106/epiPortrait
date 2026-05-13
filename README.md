@@ -1,40 +1,42 @@
----
-output: github_document
----
-
-
 
 # epiPortrait <img src="man/figures/logo.png" align="right" width="160" alt="epiPortrait Logo" />
 
 **4D Geometric Profiling of Epigenetic Landscapes — Beyond Intensity**
 
 [![R-CMD-check](https://img.shields.io/badge/R--CMD--check-passing-brightgreen.svg)](https://github.com/zhangying/epiPortrait)
-[![License: GPL (>= 3)](https://img.shields.io/badge/License-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Bioconductor Ready](https://img.shields.io/badge/Bioconductor-ready-brightgreen?logo=bioconductor)](https://www.bioconductor.org)
-[![Lifecycle: stable](https://img.shields.io/badge/Lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html)
+[![License: GPL (\>=
+3)](https://img.shields.io/badge/License-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Bioconductor
+Ready](https://img.shields.io/badge/Bioconductor-ready-brightgreen?logo=bioconductor)](https://www.bioconductor.org)
+[![Lifecycle:
+stable](https://img.shields.io/badge/Lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html)
 
----
+------------------------------------------------------------------------
 
 ## Why epiPortrait?
 
-Traditional ChIP-seq / ATAC-seq / CUT&Tag analyses treat genomic regions as
-one-dimensional features, focusing almost exclusively on signal **Intensity**
-(read counts). However, the physical conformation of chromatin domains carries
-additional biological meaning that raw counts cannot capture:
+Traditional ChIP-seq / ATAC-seq / CUT&Tag analyses treat genomic regions
+as one-dimensional features, focusing almost exclusively on signal
+**Intensity** (read counts). However, the physical conformation of
+chromatin domains carries additional biological meaning that raw counts
+cannot capture:
 
-- **Width** — lateral spreading of the mark (super-enhancers, heterochromatin expansion)
-- **Height** — local recruitment density at the summit (focal complex assembly)
-- **Skewness** — asymmetric signal distribution within the domain (directional spreading, transcription-coupled remodeling)
+- **Width** — lateral spreading of the mark (super-enhancers,
+  heterochromatin expansion)
+- **Height** — local recruitment density at the summit (focal complex
+  assembly)
+- **Skewness** — asymmetric signal distribution within the domain
+  (directional spreading, transcription-coupled remodeling)
 
-`epiPortrait` builds a **4D geometric portrait matrix** from BigWig coverage
-profiles and applies **MANOVA** to detect **Shape Shift** events — regulatory
-regions where the physical conformation of the epigenome changes significantly
-between conditions, even when total read counts do not.
+`epiPortrait` builds a **4D geometric portrait matrix** from BigWig
+coverage profiles and applies **MANOVA** to detect **Shape Shift**
+events — regulatory regions where the physical conformation of the
+epigenome changes significantly between conditions, even when total read
+counts do not.
 
----
+------------------------------------------------------------------------
 
 ## Installation
-
 
 ``` r
 if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
@@ -48,13 +50,12 @@ BiocManager::install(c(
 devtools::install_github("zhangying/epiPortrait", build_vignettes = TRUE)
 ```
 
----
+------------------------------------------------------------------------
 
 ## Core Module 1: Build the 4D Portrait Matrix
 
-The foundation of epiPortrait: extract geometric features from BigWig coverage
-at every consensus domain.
-
+The foundation of epiPortrait: extract geometric features from BigWig
+coverage at every consensus domain.
 
 ``` r
 library(epiPortrait)
@@ -87,22 +88,31 @@ se <- normalize_portrait(se, method = "TotalSignal")
 
 **Key Parameters:**
 
-- **`workers`**: Number of parallel threads via `BiocParallel`. Use `workers = 1` on Windows.
-- **`bg_quantile`**: Signals below this quantile within each peak are excluded from skewness estimation (Valley Trap — removes background noise).
-- **`on_disk`**: When `TRUE`, stores assays as HDF5 files via `HDF5Array`. Recommended for mammalian-scale (> 100K peaks) processing.
-- **`cache_dir`**: Directory to cache per-sample BigWig coverage views as RDS files. Subsequent runs skip BigWig I/O entirely when the BigWig + peaks combination is unchanged.
-- **`custom_features`**: Named list of functions; each receives coverage views for one peak and returns a numeric value, enabling user-defined geometric dimensions.
+- **`workers`**: Number of parallel threads via `BiocParallel`. Use
+  `workers = 1` on Windows.
+- **`bg_quantile`**: Signals below this quantile within each peak are
+  excluded from skewness estimation (Valley Trap — removes background
+  noise).
+- **`on_disk`**: When `TRUE`, stores assays as HDF5 files via
+  `HDF5Array`. Recommended for mammalian-scale (\> 100K peaks)
+  processing.
+- **`cache_dir`**: Directory to cache per-sample BigWig coverage views
+  as RDS files. Subsequent runs skip BigWig I/O entirely when the
+  BigWig + peaks combination is unchanged.
+- **`custom_features`**: Named list of functions; each receives coverage
+  views for one peak and returns a numeric value, enabling user-defined
+  geometric dimensions.
 
 **Output Data Dictionary — SummarizedExperiment:**
 
 | Assay | Description | Dimensions |
-|:------|:------------|:-----------|
+|:---|:---|:---|
 | `Width` | Physical span of the domain (bp); identical across all samples | N peaks × S samples |
 | `Intensity` | Total signal abundance (area under BigWig curve) | N × S |
 | `Height` | Maximum signal density at the summit | N × S |
 | `Skewness` | Background-gated robust skewness of the signal distribution | N × S |
 
----
+------------------------------------------------------------------------
 
 ## Core Module 2: Shape Shift Detection
 
@@ -111,7 +121,6 @@ se <- normalize_portrait(se, method = "TotalSignal")
 `test_global_shape_shift()` simultaneously evaluates all four geometric
 dimensions to detect **Shape Shift** events — regions where the joint
 conformation differs between conditions.
-
 
 ``` r
 # Simple two-group comparison
@@ -132,15 +141,20 @@ shift_res <- test_global_shape_shift(
 
 **Key Parameters:**
 
-- **`formula`**: Any model formula referencing `colData(se)` columns. When `NULL`, falls back to `group_var` + optional `block_var`.
-- **`test`**: MANOVA test statistic. `"Pillai"` (default) is most robust to unequal covariance matrices. Also `"Wilks"`, `"Hotelling-Lawley"`, or `"Roy"`.
-- **`term`**: Which model term to report as the effect of interest. Default auto-selects the last term.
-- **`block_var`**: Optional blocking variable for paired or batch designs.
+- **`formula`**: Any model formula referencing `colData(se)` columns.
+  When `NULL`, falls back to `group_var` + optional `block_var`.
+- **`test`**: MANOVA test statistic. `"Pillai"` (default) is most robust
+  to unequal covariance matrices. Also `"Wilks"`, `"Hotelling-Lawley"`,
+  or `"Roy"`.
+- **`term`**: Which model term to report as the effect of interest.
+  Default auto-selects the last term.
+- **`block_var`**: Optional blocking variable for paired or batch
+  designs.
 
 **Output Data Dictionary — test_global_shape_shift():**
 
 | Column | Description |
-|:-------|:------------|
+|:---|:---|
 | `seqnames`, `start`, `end` | Genomic coordinates of the domain |
 | `Peak_ID` | Unique peak identifier (matches `rownames(se)`) |
 | `Shape_Shift_Score` | Pillai trace value (0–1); larger = stronger multivariate shift |
@@ -150,7 +164,6 @@ shift_res <- test_global_shape_shift(
 | `Status` | Computation status: `"OK"`, `"Low_Variance"`, or `"MANOVA_Error"` |
 
 ### 2b. Per-Dimension Differential Testing
-
 
 ``` r
 # limma-based differential Intensity (recommended for small n)
@@ -171,17 +184,19 @@ diff_width  <- test_differential_feature(se, feature = "Width",  ...)
 
 **Key Parameters:**
 
-- **`feature`**: Any assay in the SE (`"Intensity"`, `"Height"`, `"Width"`, `"Skewness"`, or custom feature name).
-- **`method`**: `"limma"` (recommended, uses empirical Bayes moderation), `"t.test"`, or `"wilcox"`.
-- **`block_var`**: Enables paired testing for t.test / Wilcoxon, or covariate adjustment for limma.
+- **`feature`**: Any assay in the SE (`"Intensity"`, `"Height"`,
+  `"Width"`, `"Skewness"`, or custom feature name).
+- **`method`**: `"limma"` (recommended, uses empirical Bayes
+  moderation), `"t.test"`, or `"wilcox"`.
+- **`block_var`**: Enables paired testing for t.test / Wilcoxon, or
+  covariate adjustment for limma.
 
----
+------------------------------------------------------------------------
 
 ## Core Module 3: Shape Shift Classification
 
 `classify_shape_shift()` translates abstract Pillai scores into six
 biologically interpretable categories.
-
 
 ``` r
 shift_res <- classify_shape_shift(
@@ -197,7 +212,7 @@ table(shift_res$Shape_Class)
 ```
 
 | Class | Pattern | Biological Interpretation |
-|:------|:--------|:--------------------------|
+|:---|:---|:---|
 | **Concentration** | Height ↑, Intensity stable | Signal concentrates at summit — tighter regulatory focus |
 | **Flattening** | Height ↓, Intensity stable | Signal spreads across domain — regulatory broadening |
 | **Polarity Shift** | Skewness dominates | Asymmetric redistribution — directional spreading or collapse |
@@ -206,16 +221,21 @@ table(shift_res$Shape_Class)
 | **Complex** | ≥ 2 dimensions discordant | Multi-dimensional structural remodelling |
 
 <div align="center">
+
 <img src="man/figures/plot1.jpg" alt="Classification overview" width="80%" style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;">
-<p><em>Figure 1: Six epiPortrait shape shift classes illustrated on schematic coverage profiles.</em></p>
+<p>
+
+<em>Figure 1: Six epiPortrait shape shift classes illustrated on
+schematic coverage profiles.</em>
+</p>
+
 </div>
 
----
+------------------------------------------------------------------------
 
 ## Core Module 4: Outlier Detection & QC
 
 ### 4a. 4D Conformational Outlier Detection
-
 
 ``` r
 # Find domains with intrinsically unusual 4D geometry
@@ -237,14 +257,18 @@ head(outliers[, c("Peak_ID", "Mahalanobis_D2", "adj.P.Val", "Outlier_Flag")])
 
 **Key Parameters:**
 
-- **`method`**: `"robust"` (MCD, default) for outlier-resistant covariance estimation; `"classic"` for standard MLE.
-- **`ref_samples`**: Character vector of sample names defining the reference distribution. When `NULL`, all samples form the reference. Useful for query-vs-reference (e.g., tumor vs normal panel).
-- **`collapse_fun`**: Function collapsing per-sample values to a single value per domain. Default `rowMeans(na.rm = TRUE)`.
+- **`method`**: `"robust"` (MCD, default) for outlier-resistant
+  covariance estimation; `"classic"` for standard MLE.
+- **`ref_samples`**: Character vector of sample names defining the
+  reference distribution. When `NULL`, all samples form the reference.
+  Useful for query-vs-reference (e.g., tumor vs normal panel).
+- **`collapse_fun`**: Function collapsing per-sample values to a single
+  value per domain. Default `rowMeans(na.rm = TRUE)`.
 
 **Output Data Dictionary — detect_conformational_outliers():**
 
 | Column | Description |
-|:-------|:------------|
+|:---|:---|
 | `seqnames`, `start`, `end` | Genomic coordinates |
 | `Peak_ID` | Domain identifier |
 | `Mahalanobis_D2` | Squared Mahalanobis distance to the reference centroid |
@@ -253,7 +277,6 @@ head(outliers[, c("Peak_ID", "Mahalanobis_D2", "adj.P.Val", "Outlier_Flag")])
 | `Outlier_Flag` | Logical; `TRUE` if `adj.P.Val < 0.05` |
 
 ### 4b. Manhattan Plot of Conformational Outliers
-
 
 ``` r
 plot_outlier_manhattan(
@@ -266,7 +289,6 @@ plot_outlier_manhattan(
 
 ### 4c. Standard QC Visualizations
 
-
 ``` r
 # PCA on any geometric dimension
 plot_portrait_pca(se, feature = "Intensity", group_var = "Condition", n_top = 1000)
@@ -275,15 +297,14 @@ plot_portrait_pca(se, feature = "Intensity", group_var = "Condition", n_top = 10
 plot_portrait_correlation(se, feature = "Intensity")
 ```
 
----
+------------------------------------------------------------------------
 
 ## Core Module 5: Publication-Ready Visualizations
 
 ### 4D Volcano Plot
 
-X-axis: Intensity log2 fold-change | Y-axis: -log10(adj.P.Val) |
-Point size: domain width | Point color: skewness shift.
-
+X-axis: Intensity log2 fold-change \| Y-axis: -log10(adj.P.Val) \| Point
+size: domain width \| Point color: skewness shift.
 
 ``` r
 plot_portrait_volcano(
@@ -297,7 +318,6 @@ plot_portrait_volcano(
 
 ### Radar Chart: Single-Peak 4D Conformation
 
-
 ``` r
 top_peak <- shift_res$Peak_ID[shift_res$adj.P.Val < 0.05][1]
 plot_peak_portrait(se, peak_id = top_peak, group_var = "Condition")
@@ -307,7 +327,6 @@ plot_peak_portrait(se, peak_id = top_peak, group_var = "Condition")
 
 The most intuitive validation: overlay group-mean coverage profiles with
 ± SEM ribbons on the same panel.
-
 
 ``` r
 plot_shift_comparison(
@@ -321,7 +340,6 @@ plot_shift_comparison(
 
 ### Hockey Stick (ROSE-Style Super-Domain Identification)
 
-
 ``` r
 se <- call_super_domains(se, feature = "Intensity")
 plot_hockey_stick(se, feature = "Intensity", top_n_label = 10)
@@ -329,13 +347,14 @@ plot_hockey_stick(se, feature = "Intensity", top_n_label = 10)
 
 **Key Parameters for `call_super_domains()`:**
 
-- **`feature`**: `"Intensity"` → Super-Element, `"Width"` → Broad-Domain, `"Height"` → Steep-Peak.
-- **`sample_id`**: Which sample to use for ranking. Default `"Mean"` uses row means.
+- **`feature`**: `"Intensity"` → Super-Element, `"Width"` →
+  Broad-Domain, `"Height"` → Steep-Peak.
+- **`sample_id`**: Which sample to use for ranking. Default `"Mean"`
+  uses row means.
 
----
+------------------------------------------------------------------------
 
 ## Core Module 6: Temporal & Dose-Response Shape Drift
-
 
 ``` r
 # Timepoints must be numeric and ordered
@@ -354,16 +373,17 @@ head(temporal_res[, c("Peak_ID", "Linear_Pval", "Quadratic_Pval", "adj.P.Val")])
 
 **Key Parameters:**
 
-- **`poly_order`**: Maximum polynomial order. 2 = linear + quadratic; 3 = also tests cubic trends. Each order consumes 1 degree of freedom.
-- **`time_var`**: Must be numeric or convertible to numeric with ≥ 3 distinct values.
+- **`poly_order`**: Maximum polynomial order. 2 = linear + quadratic; 3
+  = also tests cubic trends. Each order consumes 1 degree of freedom.
+- **`time_var`**: Must be numeric or convertible to numeric with ≥ 3
+  distinct values.
 
----
+------------------------------------------------------------------------
 
 ## Core Module 7: Power Analysis & Experimental Design
 
-Before running your experiment: how many biological replicates do you need to
-detect a shape shift of a given magnitude?
-
+Before running your experiment: how many biological replicates do you
+need to detect a shape shift of a given magnitude?
 
 ``` r
 power_df <- simulate_power(
@@ -379,13 +399,14 @@ plot_power_curve(power_df)
 
 **Key Parameters:**
 
-- **`eta2_range`**: Partial eta-squared benchmarks: 0.01 = small, 0.06 = medium, 0.14 = large (multivariate context).
-- **`n_dims`**: Number of dimensions (1–4) where the true effect is embedded.
+- **`eta2_range`**: Partial eta-squared benchmarks: 0.01 = small, 0.06 =
+  medium, 0.14 = large (multivariate context).
+- **`n_dims`**: Number of dimensions (1–4) where the true effect is
+  embedded.
 
----
+------------------------------------------------------------------------
 
 ## Core Module 8: Annotation, Enrichment & Export
-
 
 ``` r
 # Genomic annotation via ChIPseeker
@@ -412,13 +433,12 @@ export_shifted_bed(shift_res, "shape_shifted_regions.bed", fdr_cutoff = 0.05)
 export_igv_session(shift_res, se, genome = "hg38", session_file = "epiPortrait_session.xml")
 ```
 
----
+------------------------------------------------------------------------
 
 ## One-Click Parameterised Report
 
 Generate a complete HTML report in a single call. Modules auto-hide when
 their parameters are left at `NULL`.
-
 
 ``` r
 render_report(
@@ -433,9 +453,10 @@ render_report(
 ```
 
 You can also create an R Markdown document from the built-in template:
-*File > New File > R Markdown... > From Template > epiPortrait Report*.
+*File \> New File \> R Markdown… \> From Template \> epiPortrait
+Report*.
 
----
+------------------------------------------------------------------------
 
 ## Contact
 
@@ -443,17 +464,18 @@ You can also create an R Markdown document from the built-in template:
 Zhejiang University\
 <zhangying@example.com>
 
-Issues and feature requests: <https://github.com/zhangying/epiPortrait/issues>
+Issues and feature requests:
+<https://github.com/zhangying/epiPortrait/issues>
 
----
+------------------------------------------------------------------------
 
 ## Citation
 
-> ZHANG Y. (2025). *epiPortrait: Multi-Dimensional Geometric Profiling of
-> Epigenetic Landscapes*. R package version 0.1.0.
+> ZHANG Y. (2025). *epiPortrait: Multi-Dimensional Geometric Profiling
+> of Epigenetic Landscapes*. R package version 0.1.0.
 > <https://github.com/zhangying/epiPortrait>
 
-```bibtex
+``` bibtex
 @manual{epiPortrait,
   title  = {epiPortrait: Multi-Dimensional Geometric Profiling of Epigenetic Landscapes},
   author = {Ying Zhang},
@@ -463,6 +485,4 @@ Issues and feature requests: <https://github.com/zhangying/epiPortrait/issues>
 }
 ```
 
----
-
-
+------------------------------------------------------------------------
