@@ -1,0 +1,59 @@
+Package: epiPortrait
+Type: Package
+Title: Multi-Dimensional Geometric Profiling of Epigenetic Landscapes
+Version: 0.1.0
+Authors@R: c(
+    person(given = "Ying", family = "ZHANG",
+           role = c("aut", "cre"),
+           email = "zhangying@example.com",
+           comment = c(ORCID = "0009-0005-9644-7062")))
+Description: epiPortrait is a computational framework for analyzing epigenetic
+    signals (ChIP-seq, ATAC-seq, CUT&Tag) beyond simple intensity. It extracts
+    four-dimensional geometric features (Width, Intensity, Height, Skewness)
+    from genomic domains and employs multivariate statistical testing (MANOVA)
+    to identify Shape Shift events where the physical conformation of the
+    epigenetic landscape changes between conditions, even when raw read counts
+    do not. The package provides a complete pipeline from consensus peak
+    calling and portrait matrix construction through statistical testing,
+    shape classification, annotation, enrichment, power analysis, and
+    publication-ready visualizations.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Config/testthat/edition: 3
+biocViews: ChIPSeq, Epigenetics, Coverage, DifferentialExpression, ATACSeq,
+    MultipleComparison, Normalization, PrincipalComponent, Visualization,
+    SystemsBiology, GenomeAnnotation, Classification, QualityControl,
+    Clustering
+URL: https://github.com/zhangying/epiPortrait
+BugReports: https://github.com/zhangying/epiPortrait/issues
+Imports:
+    GenomicRanges,
+    rtracklayer,
+    SummarizedExperiment,
+    BiocParallel,
+    S4Vectors,
+    IRanges,
+    ChIPseeker,
+    GenomicFeatures,
+    ggplot2,
+    ggrepel,
+    limma,
+    moments,
+    stats,
+    methods
+Suggests:
+    BiocStyle,
+    HDF5Array,
+    cowplot,
+    edgeR,
+    knitr,
+    clusterProfiler,
+    org.Hs.eg.db,
+    org.Mm.eg.db,
+    rmarkdown,
+    robustbase,
+    testthat
+VignetteBuilder: knitr

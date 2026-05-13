@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# R
+.Rproj.user
+.Rhistory
+.RData
+*.Rproj
+.Rcache
+
+# Package development
+*.tar.gz
+*.tgz
+revdep/
+Meta/
+
+# Vignette outputs
+vignettes/*.html
+vignettes/*.pdf
+inst/doc/
+
+# Temporary
+*.swp
+*.swo
+*~
+~

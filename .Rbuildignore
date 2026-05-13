@@ -1,0 +1,6 @@
+^epiPortrait\.Rproj$
+^\.Rproj\.user$
+^generate_logo\.R$
+^R/.*\.Rhistory$
+^vignettes/.*\.RData$
+^man/figures/.*_unused\.png$

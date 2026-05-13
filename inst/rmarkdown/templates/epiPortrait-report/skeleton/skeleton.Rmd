@@ -1,0 +1,342 @@
+---
+title: "`r params$report_title`"
+subtitle: "4D Geometric Epigenetic Profiling"
+author: "`r params$author`"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    number_sections: true
+    code_folding: show
+    theme: cosmo
+    highlight: tango
+    css: default
+params:
+  # ---- Required parameters ----
+  sample_sheet: null
+  consensus_peaks: null
+  group_var: "Condition"
+  target_group: null
+  ref_group: null
+  # ---- Optional: data processing ----
+  stitch_distance: null
+  normalization_method: "TotalSignal"
+  bg_quantile: 0.1
+  workers: 1
+  on_disk: false
+  h5_dir: "epiPortrait_h5"
+  # ---- Optional: statistical cutoffs ----
+  p_cutoff: 0.05
+  fc_cutoff: 1
+  # ---- Optional: annotation ----
+  annotation_genome: null
+  tss_region: [-3000, 3000]
+  # ---- Optional: super-domain ----
+  super_domain_feature: null
+  # ---- Optional: visualization tweaks ----
+  n_top_pca: 500
+  top_n_label: 10
+  # ---- Metadata ----
+  report_title: "epiPortrait Analysis Report"
+  author: "epiPortrait"
+  output_dir: "."
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = TRUE,
+  message = TRUE,
+  fig.width = 9,
+  fig.height = 6,
+  dpi = 150
+)
+
+library(epiPortrait)
+library(GenomicRanges)
+library(SummarizedExperiment)
+library(ggplot2)
+
+# Helper: conditionally include a chunk section via a labelled list
+.has <- function(x) !is.null(x) && length(x) > 0
+```
+
+<style type="text/css">
+body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+h1 { border-bottom: 2px solid #357EBD; padding-bottom: 0.3em; }
+h2 { border-bottom: 1px solid #ddd; padding-bottom: 0.2em; color: #357EBD; }
+pre { border-radius: 4px; }
+.table { width: auto; }
+</style>
+
+---
+
+```{r load-data, include = .has(params$consensus_peaks)}
+# Load inputs and build portrait matrix ---------------------------------------
+if (is.character(params$sample_sheet)) {
+  sample_sheet <- read.csv(params$sample_sheet, stringsAsFactors = FALSE)
+} else {
+  sample_sheet <- params$sample_sheet
+}
+
+if (is.character(params$consensus_peaks)) {
+  consensus_peaks <- rtracklayer::import(params$consensus_peaks)
+} else {
+  consensus_peaks <- params$consensus_peaks
+}
+
+stopifnot(
+  all(c("SampleID", "Condition", "bw_path") %in% colnames(sample_sheet)),
+  is(consensus_peaks, "GRanges")
+)
+
+cat(sprintf("### Input Summary\n\n- **Samples**: %d\n- **Consensus peaks**: %d\n- **Groups**: %s\n\n",
+    nrow(sample_sheet), length(consensus_peaks),
+    paste(unique(sample_sheet[[params$group_var]]), collapse = ", ")))
+
+se <- build_portrait_matrix(
+  sample_sheet = sample_sheet,
+  consensus_peaks = consensus_peaks,
+  workers = params$workers,
+  bg_quantile = params$bg_quantile,
+  on_disk = params$on_disk,
+  h5_dir = params$h5_dir
+)
+```
+
+# Data Processing {#processing}
+
+```{r normalize, eval = params$normalization_method != "None"}
+se <- normalize_portrait(se, method = params$normalization_method)
+```
+
+```{r stitch, eval = .has(params$stitch_distance)}
+stitched <- stitch_epi_peaks(consensus_peaks,
+                              stitch_distance = params$stitch_distance)
+cat(sprintf("Stitching complete: %d peaks → %d macro-domains (distance = %d bp).\n\n",
+            length(consensus_peaks), length(stitched), params$stitch_distance))
+# Rebuild portrait on stitched domains
+se <- build_portrait_matrix(
+  sample_sheet = sample_sheet,
+  consensus_peaks = stitched,
+  workers = params$workers,
+  bg_quantile = params$bg_quantile,
+  on_disk = params$on_disk,
+  h5_dir = params$h5_dir
+)
+if (params$normalization_method != "None") {
+  se <- normalize_portrait(se, method = params$normalization_method)
+}
+```
+
+# Quality Control {#qc}
+
+```{r pca, fig.cap = paste("PCA of", params$group_var, "based on normalized Intensity")}
+plot_portrait_pca(se, feature = "Intensity",
+                  group_var = params$group_var,
+                  n_top = params$n_top_pca)
+```
+
+```{r correlation, fig.cap = "Sample Pearson correlation heatmap (normalized)"}
+plot_portrait_correlation(se, feature = "Intensity")
+```
+
+# Global Shape Shift Test (MANOVA) {#global-shift}
+
+```{r global-shift, message = TRUE}
+shift_res <- test_global_shape_shift(
+  se, group_var = params$group_var,
+  workers = params$workers
+)
+
+n_sig <- sum(shift_res$adj.P.Val < params$p_cutoff, na.rm = TRUE)
+cat(sprintf("**%d** regions show significant shape shift (adj.P.Val < %s).\n\n",
+            n_sig, params$p_cutoff))
+```
+
+```{r global-shift-table}
+knitr::kable(
+  head(shift_res[shift_res$adj.P.Val < params$p_cutoff, ], 20),
+  digits = 4,
+  caption = "Top 20 significantly shape-shifted regions"
+)
+```
+
+# Shape Shift Classification {#classification}
+
+```{r classify, message = TRUE}
+shift_res <- classify_shape_shift(
+  se, shift_res,
+  group_var = params$group_var,
+  target_group = params$target_group,
+  ref_group = params$ref_group
+)
+```
+
+```{r class-summary}
+class_tab <- as.data.frame(table(shift_res$Shape_Class))
+colnames(class_tab) <- c("Shape Class", "Count")
+class_tab <- class_tab[order(class_tab$Count, decreasing = TRUE), ]
+rownames(class_tab) <- NULL
+knitr::kable(class_tab, caption = "Shape Shift classification summary")
+
+cat("\n### Class Descriptions\n\n",
+    "- **Concentration**: Height increases without Intensity gain — signal concentrates at the summit.\n",
+    "- **Flattening**: Height decreases while Intensity stable — signal spreads across the domain.\n",
+    "- **Polarity Shift**: Skewness changes dominate — signal redistributes asymmetrically.\n",
+    "- **Global Gain**: Coordinated increase in signal abundance.\n",
+    "- **Global Loss**: Coordinated decrease in signal abundance.\n",
+    "- **Complex**: Multiple dimensions shift in discordant directions.\n",
+    "- **Stable**: No significant geometric change detected.\n\n")
+```
+
+```{r class-table}
+sig_class <- shift_res[shift_res$adj.P.Val < params$p_cutoff, ]
+sig_class <- sig_class[order(sig_class$adj.P.Val), ]
+knitr::kable(
+  head(sig_class[, c("Peak_ID", "Shape_Shift_Score", "adj.P.Val",
+                     "Shape_Class", "Class_Label")], 20),
+  digits = 4,
+  caption = "Top 20 classified shape-shifted regions"
+)
+```
+
+# Differential Feature Analysis {#diff-feature}
+
+```{r diff-test, message = TRUE}
+diff_res <- test_differential_feature(
+  se,
+  feature = "Intensity",
+  group_var = params$group_var,
+  target_group = params$target_group,
+  ref_group = params$ref_group,
+  method = "limma",
+  workers = params$workers
+)
+
+n_up   <- sum(diff_res$adj.P.Val < params$p_cutoff & diff_res$logFC >  params$fc_cutoff, na.rm = TRUE)
+n_down <- sum(diff_res$adj.P.Val < params$p_cutoff & diff_res$logFC < -params$fc_cutoff, na.rm = TRUE)
+cat(sprintf("- **Up** (logFC > %.1f): %d\n- **Down** (logFC < %.1f): %d\n\n",
+            params$fc_cutoff, n_up, -params$fc_cutoff, n_down))
+```
+
+```{r diff-table}
+diff_sig <- diff_res[diff_res$adj.P.Val < params$p_cutoff, ]
+diff_sig <- diff_sig[order(diff_sig$adj.P.Val), ]
+knitr::kable(head(diff_sig, 20), digits = 4,
+             caption = "Top 20 differentially intense regions")
+```
+
+# Visualization {#visualization}
+
+## 4D Volcano Plot {#volcano}
+
+```{r volcano, fig.cap = paste("4D volcano:", params$target_group, "vs", params$ref_group), fig.width = 10, fig.height = 8}
+plot_portrait_volcano(
+  res_df = diff_res,
+  se = se,
+  group_var = params$group_var,
+  target_group = params$target_group,
+  ref_group = params$ref_group,
+  p_cutoff = params$p_cutoff,
+  fc_cutoff = params$fc_cutoff
+)
+```
+
+## Top Shifted Peaks — Radar Portraits {#radar}
+
+```{r radar-top, fig.height = 10, fig.width = 12, warning = FALSE}
+top_ids <- head(shift_res$Peak_ID[shift_res$adj.P.Val < params$p_cutoff], 6)
+if (length(top_ids) > 0) {
+  plots <- lapply(top_ids, function(pid) {
+    plot_peak_portrait(se, peak_id = pid, group_var = params$group_var) +
+      ggtitle(pid)
+  })
+  cowplot::plot_grid(plotlist = plots, ncol = min(3, length(plots)))
+} else {
+  cat("*No significantly shifted peaks at the current threshold.*\n\n")
+}
+```
+
+## Coverage Tracks — Individual Samples {#tracks}
+
+```{r tracks, fig.height = 12, fig.width = 10, warning = FALSE}
+if (length(top_ids) > 0) {
+  for (pid in head(top_ids, 3)) {
+    p <- plot_peak_track(se, peak_id = pid,
+                         group_var = params$group_var,
+                         extend_bp = 1000)
+    print(p)
+  }
+}
+```
+
+## Shape Shift Validation — Group Overlays {#overlay}
+
+```{r overlay, fig.height = 5, fig.width = 10, warning = FALSE}
+if (length(top_ids) > 0) {
+  for (pid in head(top_ids, 4)) {
+    p <- plot_shift_comparison(
+      se, peak_id = pid,
+      group_var = params$group_var,
+      group1 = params$ref_group,
+      group2 = params$target_group,
+      extend_bp = 1000
+    )
+    print(p)
+  }
+}
+```
+
+# Super-Domain Identification {#super-domain}
+
+```{r super-domain, eval = .has(params$super_domain_feature), fig.cap = "ROSE-style ranking plot"}
+se <- call_super_domains(se, feature = params$super_domain_feature)
+plot_hockey_stick(se, feature = params$super_domain_feature,
+                   label_genes = TRUE,
+                   top_n_label = params$top_n_label)
+
+types <- table(rowData(se)[[paste0(params$super_domain_feature, "_Domain_Type")]])
+cat(sprintf("**Domain classification** (%s): %s\n\n",
+            params$super_domain_feature,
+            paste(names(types), types, sep = " = ", collapse = ", ")))
+```
+
+# Genomic Annotation {#annotation}
+
+```{r annotation, eval = .has(params$annotation_genome), message = TRUE}
+sig_peaks <- shift_res[shift_res$adj.P.Val < params$p_cutoff, ]
+if (nrow(sig_peaks) > 0) {
+  anno_df <- annotate_epi_peaks(
+    gr = sig_peaks,
+    genome = params$annotation_genome,
+    tss_region = params$tss_region,
+    return_format = "dataframe"
+  )
+  knitr::kable(head(anno_df, 20), digits = 4,
+               caption = "Annotation of significantly shifted regions")
+} else {
+  cat("*No significant peaks to annotate.*\n\n")
+}
+```
+
+# BED Export {#export}
+
+```{r export}
+export_shifted_bed(
+  shift_res,
+  file = file.path(params$output_dir, "epiPortrait_shifted_peaks.bed"),
+  fdr_cutoff = params$p_cutoff
+)
+cat(sprintf("Exported shifted peaks to `%s/epiPortrait_shifted_peaks.bed`.\n\n",
+            params$output_dir))
+```
+
+# Session Information {#session}
+
+```{r session-info}
+sessionInfo()
+```

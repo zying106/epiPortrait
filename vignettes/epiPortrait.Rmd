@@ -1,0 +1,1159 @@
+---
+title: "epiPortrait: 4D Geometric Profiling of Epigenetic Landscapes"
+author:
+- name: "Ying ZHANG"
+  affiliation: "Zhejiang University"
+  email: "zhangying@example.com"
+  orcid: "0009-0005-9644-7062"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    highlight: tango
+vignette: >
+  %\VignetteIndexEntry{epiPortrait: 4D Geometric Profiling of Epigenetic Landscapes}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<style>
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+th {
+  background-color: #f2f2f2;
+  text-align: left;
+}
+.comparison-table-wrap {
+  overflow-x: auto;
+}
+</style>
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width  = 8,
+  fig.height = 5,
+  message    = FALSE,
+  warning    = FALSE
+)
+```
+
+---
+
+# Introduction
+
+`r BiocStyle::Biocpkg("epiPortrait")` is a computational framework for
+analyzing epigenetic signals (ChIP-seq, ATAC-seq, CUT&Tag) beyond their
+one-dimensional read count. It extracts a **four-dimensional geometric
+portrait** from BigWig coverage profiles — **Width**, **Intensity**, **Height**,
+and **Skewness** — at every genomic domain, then applies multivariate
+statistical testing (MANOVA) to detect **Shape Shift** events where the
+physical conformation of chromatin changes between experimental conditions.
+
+## Key Features & Capabilities
+
+1. **4D Feature Extraction** — Parse BigWig coverage into Width, Intensity,
+   Height, and background-gated Skewness for every consensus domain in parallel.
+
+2. **Multivariate Shape Shift Testing** — MANOVA-based global test across all
+   four dimensions with partial eta-squared effect sizes. Supports simple
+   two-group, paired/blocked, and complex multi-factor designs.
+
+3. **Shape Classification** — Translates abstract Pillai trace scores into six
+   biologically interpretable categories (Concentration, Flattening, Polarity
+   Shift, Global Gain, Global Loss, Complex).
+
+4. **Conformational Outlier Detection** — Mahalanobis distance with robust
+   (MCD) covariance estimation identifies domains with intrinsically unusual
+   4D geometry, without requiring group labels.
+
+5. **Temporal & Dose-Response** — Polynomial contrast MANOVA detects monotonic
+   broadening, transient sharpening, and non-linear drift across timepoints.
+
+6. **Power Analysis** — Monte Carlo simulation of MANOVA power across sample
+   sizes and effect sizes for prospective experimental design.
+
+7. **Publication-Ready Visualization** — 4D volcano plots, radar charts, group
+   overlay tracks, hockey stick plots, Manhattan plots, PCA, and correlation
+   heatmaps.
+
+8. **Complete Pipeline** — From consensus peak calling to annotation,
+   enrichment, BED/IGV export, parameterised HTML report, and automated
+   biological narrative synthesis.
+
+## Comparison with Related Approaches
+
+<div class="comparison-table-wrap">
+
+| Feature | epiPortrait | DiffBind | ChIPseeker | csaw | ROSE |
+|:--------|:------------|:---------|:-----------|:-----|:-----|
+| **Signal dimensions** | 4D (W,I,H,S) | 1D (counts) | 1D (peaks) | 1D (counts) | 1D (intensity) |
+| **Multivariate testing** | &#10004; MANOVA | &#10008; | &#10008; | &#10008; | &#10008; |
+| **Shape shift detection** | &#10004; | &#10008; | &#10008; | &#10008; | &#10008; |
+| **Domain shape classification** | &#10004; 6 classes | &#10008; | &#10008; | &#10008; | &#10008; |
+| **Super-enhancer detection** | &#10004; W/I/H | &#10008; | &#10008; | &#10008; | &#10004; Intensity |
+| **Temporal trend testing** | &#10004; polynomial | &#10008; | &#10008; | &#10008; | &#10008; |
+| **Outlier detection (no groups)** | &#10004; Mahalanobis | &#10008; | &#10008; | &#10008; | &#10008; |
+| **Power analysis** | &#10004; | &#10008; | &#10008; | &#10008; | &#10008; |
+| **IGV session export** | &#10004; | &#10008; | &#10008; | &#10008; | &#10008; |
+| **Narrative synthesis** | &#10004; | &#10008; | &#10008; | &#10008; | &#10008; |
+
+</div>
+
+&#10004; = Supported | Partial = Conditionally supported | &#10008; = Not supported
+
+---
+
+# Installation
+
+```{r install, eval = FALSE}
+if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install(c(
+  "GenomicRanges", "SummarizedExperiment", "rtracklayer",
+  "ChIPseeker", "GenomicFeatures", "limma",
+  "clusterProfiler", "org.Hs.eg.db", "org.Mm.eg.db"
+))
+
+# Install epiPortrait from GitHub
+devtools::install_github("zhangying/epiPortrait", build_vignettes = TRUE)
+```
+
+```{r load}
+library(epiPortrait)
+library(SummarizedExperiment)
+library(ggplot2)
+```
+
+---
+
+# Quick Start with Example Data
+
+`epiPortrait` ships with a simulated dataset containing 500 peaks across
+6 samples (3 Control, 3 Treatment) with **known ground-truth shape shifts**
+embedded in the data. This enables method validation against a known answer.
+
+```{r example-data}
+data(example_se)
+example_se
+
+# Ground truth: 5 types of shape shift embedded
+table(mcols(rowRanges(example_se))$True_Class)
+```
+
+---
+
+# Module 1: Building the 4D Portrait Matrix
+
+The core engine `build_portrait_matrix()` reads BigWig coverage profiles and
+constructs a `SummarizedExperiment` with 4 assays (plus optional custom
+features).
+
+## Full Pipeline
+
+```{r build-matrix, eval = FALSE}
+sample_sheet <- data.frame(
+  SampleID  = c("Ctrl_1", "Ctrl_2", "Ctrl_3", "Treat_1", "Treat_2", "Treat_3"),
+  Condition = c("Control", "Control", "Control", "Treatment", "Treatment", "Treatment"),
+  bw_path   = c("ctrl1.bw", "ctrl2.bw", "ctrl3.bw", "treat1.bw", "treat2.bw", "treat3.bw")
+)
+
+# Consensus peaks from your peak-caller output
+# consensus_peaks <- get_consensus_peaks(peak_list, min_reps = 2)
+
+# Optionally stitch into macro-domains
+# macro_domains <- stitch_epi_peaks(consensus_peaks, stitch_distance = 12500)
+
+# Build the 4D portrait
+se <- build_portrait_matrix(
+  sample_sheet    = sample_sheet,
+  consensus_peaks = consensus_peaks,
+  workers         = 4,
+  bg_quantile     = 0.1,
+  on_disk         = FALSE,
+  cache_dir       = "epiPortrait_cache"
+)
+
+# Normalize
+se <- normalize_portrait(se, method = "TotalSignal")
+```
+
+```{r example-se, echo = FALSE}
+se <- example_se
+```
+
+## Deep Dive: Feature Extraction Engine
+
+**Width** is constant across all samples for each peak (the physical span
+of the consensus domain). It is stored once and replicated for matrix
+compatibility.
+
+**Intensity** is the total signal abundance: `sum(coverage_view)`. This is
+analogous to traditional read count but computed from BigWig coverage rather
+than count tables, enabling precise quantification within arbitrary
+domain boundaries.
+
+**Height** is the maximum signal density at the summit: `max(coverage_view)`.
+This captures peak sharpness independent of total signal.
+
+**Skewness** is computed via `moments::skewness()` on coverage values
+exceeding the `bg_quantile` threshold within each domain (the **Valley Trap**
+method). This gate excludes background noise that would otherwise dominate
+the skewness estimate in low-signal regions.
+
+**Custom Features**: You can extend the portrait matrix with arbitrary
+user-defined geometric dimensions via the `custom_features` parameter.
+Each custom function receives the coverage view for one peak as a
+`NumericList` and must return a single numeric value.
+
+```{r custom-features, eval = FALSE}
+se <- build_portrait_matrix(
+  sample_sheet    = samples,
+  consensus_peaks = peaks,
+  custom_features = list(
+    Entropy = function(x) {
+      p <- (x + 1) / sum(x + 1)
+      -sum(p * log2(p))
+    },
+    Coverage_Breadth = function(x) sum(x > quantile(x, 0.5)) / length(x)
+  )
+)
+```
+
+## Caching Strategy
+
+Setting `cache_dir` to a directory path caches per-sample BigWig coverage
+views as RDS files keyed by a hash of the BigWig path and consensus peaks.
+Subsequent calls with identical inputs skip BigWig I/O entirely, making it
+practical to tune `bg_quantile` or iterate on feature engineering without
+re-reading multi-gigabyte BigWig files.
+
+---
+
+# Module 2: Normalization
+
+```{r norm}
+se <- normalize_portrait(se, method = "TotalSignal")
+```
+
+| Method | Description | Use Case |
+|:-------|:------------|:---------|
+| `TotalSignal` | Scales each sample to equal total signal across all domains | Default; robust to most scenarios |
+| `Quantile` | Forces identical empirical distributions across samples | Severe batch effects |
+| `Z-score` | Standardizes each domain to mean = 0, sd = 1 per sample | Heatmaps and clustering ONLY; not for differential testing |
+| `TMM` | Trimmed mean of M-values (edgeR) | Count data only; requires `force_TMM = TRUE` for BigWig signals |
+
+---
+
+# Module 3: Quality Control
+
+PCA and correlation heatmaps on individual geometric features reveal sample
+clustering, batch effects, and outlier samples before formal statistical
+testing.
+
+```{r qc-pca, fig.width = 9, fig.height = 5}
+plot_portrait_pca(se, feature = "Intensity", group_var = "Condition", n_top = 500)
+```
+
+```{r qc-corr, fig.width = 7, fig.height = 6}
+plot_portrait_correlation(se, feature = "Intensity")
+```
+
+---
+
+# Module 4: Statistical Testing
+
+## 4a. Global Shape Shift Test (MANOVA)
+
+`test_global_shape_shift()` performs a per-peak MANOVA across all four
+geometric dimensions (Width, Intensity, Height, Skewness) simultaneously.
+This is the **primary innovation** of epiPortrait: detecting multivariate
+conformational change that is invisible to any single-dimension test.
+
+### Simple Two-Group Comparison
+
+```{r shift-simple}
+shift_res <- test_global_shape_shift(se, group_var = "Condition", workers = 1)
+head(shift_res[, c("Peak_ID", "Shape_Shift_Score", "partial_eta_sq", "adj.P.Val")], 5)
+```
+
+The `partial_eta_sq` column reports the proportion of multivariate variance
+explained by group membership — a Cohen-style effect size directly
+comparable across peaks.
+
+### Complex Multi-Factor Designs
+
+```{r shift-formula}
+shift_res <- test_global_shape_shift(
+  se,
+  formula = ~ Condition,
+  term    = "Condition",
+  workers = 1
+)
+```
+
+The `formula` interface accepts any model specification from `colData(se)`:
+`~ genotype * treatment + batch`, `~ timepoint + patient`, etc. The last
+term in the formula is auto-selected as the effect of interest unless
+overridden by `term`.
+
+## 4b. Per-Dimension Differential Testing
+
+```{r diff}
+diff_res <- test_differential_feature(
+  se,
+  feature      = "Intensity",
+  group_var    = "Condition",
+  target_group = "Treatment",
+  ref_group    = "Control",
+  method       = "limma"
+)
+
+# Test Height similarly
+diff_height <- test_differential_feature(
+  se, feature = "Height",
+  group_var = "Condition",
+  target_group = "Treatment", ref_group = "Control",
+  method = "limma"
+)
+```
+
+**Method selection guide:**
+
+| Method | Pros | Cons | Recommended for |
+|:-------|:-----|:-----|:----------------|
+| `limma` | Empirical Bayes moderation; stable with n < 5 | Assumes normality | Default; most scenarios |
+| `t.test` | No prior distribution assumptions | Underpowered with small n | n ≥ 6 per group |
+| `wilcox` | Distribution-free; robust to outliers | Low power with n < 8 | Non-normal data with sufficient replicates |
+
+---
+
+# Module 5: Shape Classification
+
+```{r classify}
+shift_res <- classify_shape_shift(
+  se, shift_res,
+  group_var    = "Condition",
+  target_group = "Treatment",
+  ref_group    = "Control",
+  fc_threshold     = 0.5,
+  skewness_threshold = 0.3
+)
+
+table(shift_res$Shape_Class)
+```
+
+### Classification Rules
+
+Each peak is classified by comparing per-dimension log2 fold changes and
+skewness delta against user-defined thresholds:
+
+| Class | Intensity FC | Height FC | Skewness Delta | Interpretation |
+|:------|:------------|:----------|:---------------|:---------------|
+| **Concentration** | Stable | Up (> threshold) | Stable | Signal concentrates at summit |
+| **Flattening** | Stable | Down (< -threshold) | Stable | Signal spreads laterally |
+| **Polarity Shift** | Stable | Stable | Large (> threshold) | Asymmetric redistribution |
+| **Global Gain** | Up | Concordant or stable | Stable | Coordinated activation |
+| **Global Loss** | Down | Concordant or stable | Stable | Coordinated repression |
+| **Complex** | ≥ 2 dimensions discordant | | | Multi-dimensional remodelling |
+| **Stable** | All stable | All stable | Stable | No significant change |
+
+---
+
+# Module 6: Temporal & Dose-Response Analysis
+
+```{r temporal, eval = FALSE}
+# Requires ≥ 3 ordered timepoints
+se$Timepoint <- c(0, 0, 2, 2, 6, 6, 24, 24)
+
+temporal_res <- test_temporal_shape_shift(
+  se,
+  time_var   = "Timepoint",
+  block_var  = "Patient",    # optional, for paired designs
+  poly_order = 2,            # linear + quadratic trends
+  workers    = 4
+)
+
+# Output columns per trend: Linear_Score, Linear_Pval, Linear_Eta2,
+#                           Quadratic_Score, Quadratic_Pval, Quadratic_Eta2
+head(temporal_res[, grep("Pval|Peak_ID", colnames(temporal_res))])
+```
+
+**Interpretation:**
+
+- **Linear trend**: Monotonic broadening or sharpening across time/dose.
+- **Quadratic trend**: Peak-then-collapse (or dip-then-rise) — non-linear
+  temporal dynamics often associated with transient regulatory events.
+- **Cubic trend** (poly_order = 3): Oscillatory patterns.
+
+---
+
+# Module 7: Conformational Outlier Detection
+
+`detect_conformational_outliers()` identifies domains whose 4D geometry
+deviates from the population distribution using the Mahalanobis distance.
+Unlike MANOVA, this does **not** require group labels — it detects
+intrinsically unusual conformations, making it suitable for single-sample
+analysis and QC.
+
+```{r outlier}
+outliers <- detect_conformational_outliers(se, method = "robust")
+
+head(outliers[, c("Peak_ID", "Mahalanobis_D2", "P.Value", "adj.P.Val", "Outlier_Flag")], 5)
+```
+
+**Robust vs Classic estimation:**
+
+| Estimator | Method | Outlier Resistance | Use Case |
+|:----------|:-------|:-------------------|:---------|
+| `"robust"` | MCD (Minimum Covariance Determinant) | High — outliers excluded from covariance estimation | Default; most scenarios |
+| `"classic"` | Sample mean and covariance (MLE) | None — outliers inflate covariance | Only when MCD fails (e.g., n < 8) |
+
+**Single-sample mode:** Provide `ref_samples` to estimate the reference
+distribution from a control cohort and evaluate a query sample against it.
+
+```{r outlier-single, eval = FALSE}
+outliers <- detect_conformational_outliers(
+  se,
+  method      = "robust",
+  ref_samples = c("Normal_1", "Normal_2", "Normal_3")
+)
+```
+
+---
+
+# Module 8: Visualization Suite
+
+## 8a. 4D Volcano Plot {.tabset}
+
+X-axis: Intensity log2 fold-change | Y-axis: -log10(adj.P.Val) |
+Point size: domain width | Point color: skewness shift.
+
+```{r volcano, fig.width = 10, fig.height = 8}
+plot_portrait_volcano(
+  diff_res, se,
+  target_group = "Treatment",
+  ref_group    = "Control",
+  p_cutoff     = 0.05,
+  fc_cutoff    = 1
+)
+```
+
+**Plot key:**
+
+| Aesthetic | Data | Interpretation |
+|:----------|:-----|:---------------|
+| X position | Intensity log2FC | Traditional differential binding signal |
+| Y position | -log10(adj.P.Val) | Statistical significance |
+| Point size | log10(Width + 1) | Physical domain span |
+| Point color | Skewness_Delta | Asymmetric redistribution (red = right-skewed in target, blue = left-skewed) |
+| Point alpha | Significance category (Up/Down/Not Sig) | Non-significant points fade to background |
+
+## 8b. Single-Peak Radar Portrait
+
+Visualize the 4D conformation of one peak across experimental groups using
+Min-Max scaled polar coordinates. All four dimensions are normalized to
+[0, 1] for visual comparability — the **shape**, not absolute magnitude,
+is emphasized.
+
+```{r radar, fig.width = 7, fig.height = 6}
+top_peaks <- shift_res$Peak_ID[shift_res$adj.P.Val < 0.05]
+if (length(top_peaks) > 0) {
+  plot_peak_portrait(se, peak_id = top_peaks[1], group_var = "Condition")
+}
+```
+
+## 8c. Shape Shift Validation: Group Overlay Tracks
+
+The most intuitive validation: mean coverage of two groups overlaid on the
+same panel with ± SEM ribbons.
+
+```{r overlay, fig.width = 10, fig.height = 5, warning = FALSE, eval = FALSE}
+# Requires actual BigWig files on disk (example_se uses simulated paths).
+# With your own data, this produces the most intuitive validation figure.
+if (length(top_peaks) > 0) {
+  plot_shift_comparison(
+    se, peak_id = top_peaks[1],
+    group_var = "Condition",
+    group1    = "Control",
+    group2    = "Treatment",
+    extend_bp = 1000
+  )
+}
+```
+
+## 8d. Hockey Stick Plot (Super-Domain Identification)
+
+ROSE-style ranking: domains are ordered by a geometric feature, and the
+inflection point separates **Super-Domains** from **Typical** domains.
+
+```{r hockey, fig.width = 8, fig.height = 5}
+se <- call_super_domains(se, feature = "Intensity")
+plot_hockey_stick(se, feature = "Intensity", top_n_label = 10)
+
+# For broad-domains based on width:
+# se <- call_super_domains(se, feature = "Width")
+# plot_hockey_stick(se, feature = "Width")
+
+# For steep-peaks based on height:
+# se <- call_super_domains(se, feature = "Height")
+# plot_hockey_stick(se, feature = "Height")
+```
+
+## 8e. Manhattan Plot of Conformational Outliers
+
+Genome-wide view of conformational outlier significance, with chromosome
+alternation and significance threshold.
+
+```{r manhattan, fig.width = 12, fig.height = 5}
+outliers <- detect_conformational_outliers(se, method = "robust")
+plot_outlier_manhattan(outliers, y_axis = "logP", label_n = 10)
+```
+
+**Available visualizations by analysis stage:**
+
+| Stage | Function | Description |
+|:------|:---------|:------------|
+| QC | `plot_portrait_pca()` | PCA on any geometric dimension |
+| QC | `plot_portrait_correlation()` | Sample Pearson correlation heatmap |
+| Differential | `plot_portrait_volcano()` | 4D volcano: logFC × P × Width × Skewness |
+| Differential | `plot_peak_portrait()` | Radar chart of single-peak 4D conformation |
+| Validation | `plot_shift_comparison()` | Group overlay: mean ± SEM tracks |
+| Validation | `plot_peak_track()` | Per-sample faceted coverage profiles |
+| Calling | `plot_hockey_stick()` | ROSE-style super-domain ranking |
+| Outlier | `plot_outlier_manhattan()` | Genomic distribution of conformational outliers |
+| Power | `plot_power_curve()` | Power × sample size × effect size |
+
+---
+
+# Module 9: Annotation & Enrichment
+
+## 9a. Genomic Annotation
+
+Map shape-shifted domains to nearest genes using ChIPseeker's annotation
+engine with smart lazy-loading for common genomes.
+
+```{r annotation, eval = FALSE}
+# Data frame output (merges annotations with epiPortrait feature columns)
+anno_df <- annotate_epi_peaks(
+  shift_res[shift_res$adj.P.Val < 0.05, ],
+  genome     = "hg38",
+  tss_region = c(-3000, 3000)
+)
+
+# Raw csAnno object for ChIPseeker plotting
+anno_obj <- annotate_epi_peaks(
+  sig_peaks, genome = "hg38",
+  return_format = "csAnno"
+)
+ChIPseeker::plotAnnoPie(anno_obj)
+```
+
+**Supported genomes:** `"hg38"`, `"hg19"`, `"mm10"`, or `"custom"` (with
+user-supplied `custom_txdb` and `custom_annoDb`).
+
+## 9b. Functional Enrichment
+
+Run GO (BP, MF, CC) and KEGG pathway enrichment **per Shape_Class category**,
+enabling class-specific functional interpretation.
+
+```{r enrichment, eval = FALSE}
+enrich_res <- enrich_shape_shifted(shift_res, organism = "human")
+
+# Access class-specific results
+enrich_res$go$Concentration  # GO terms enriched in Concentration peaks
+enrich_res$go$Flattening     # GO terms enriched in Flattening peaks
+```
+
+## 9c. Automated Biological Narrative
+
+`summarize_findings()` synthesizes classified shape-shift results into a
+structured, human-readable narrative suitable for a manuscript results
+section — top-level summary, per-class breakdown with gene examples, top
+peaks table, enrichment interpretation, and recommended follow-up experiments.
+
+```{r narrative, eval = FALSE}
+narrative <- summarize_findings(
+  shift_res, se,
+  enrichment_res = enrich_res,
+  fdr_cutoff     = 0.05
+)
+
+# Copy-paste ready full text
+cat(narrative$full_text)
+
+# Or extract individual sections
+cat(narrative$summary)           # one-paragraph top-level summary
+cat(narrative$class_breakdown)   # per-class narrative with gene examples
+cat(narrative$follow_up)         # recommended next experiments
+```
+
+---
+
+# Module 10: Power Analysis
+
+Before designing your experiment, determine the minimum number of biological
+replicates needed to detect a shape shift of a given magnitude.
+
+```{r power, eval = FALSE}
+power_df <- simulate_power(
+  n_range    = 3:10,
+  eta2_range = c(0.06, 0.14, 0.30, 0.50),
+  n_dims     = 2,
+  n_sim      = 200,
+  workers    = 4
+)
+
+plot_power_curve(power_df)
+```
+
+**Interpreting partial eta² in the multivariate context:**
+
+| eta² | Benchmark | Description |
+|:-----|:----------|:------------|
+| 0.01 | Small | Subtle shape shift; requires n > 20 per group |
+| 0.06 | Medium | Detectable with n = 8–12 per group |
+| 0.14 | Large | Detectable with n = 4–6 per group |
+| 0.30+ | Very large | Detectable with n = 3 per group |
+
+---
+
+# Module 11: Export
+
+## BED File Export
+
+```{r bed-export, eval = FALSE}
+export_shifted_bed(
+  shift_res,
+  file       = "shape_shifted_regions.bed",
+  fdr_cutoff = 0.05
+)
+```
+
+The output BED file includes the `Shape_Class` column for downstream
+filtering and coloring in IGV.
+
+## IGV Session Export
+
+Double-click the generated XML to open all BigWig tracks and a
+shape-class-colored annotation track in IGV.
+
+```{r igv, eval = FALSE}
+export_igv_session(
+  shift_res, se,
+  genome       = "hg38",
+  session_file = "epiPortrait_session.xml"
+)
+```
+
+This creates:
+- `epiPortrait_session.xml` — IGV session with BigWig tracks + annotation track
+- `epiPortrait_session_annotation.bed` — shape-shifted regions colored by `Shape_Class`
+
+---
+
+# Module 12: One-Click Parameterised Report
+
+Generate a complete, publication-ready HTML report with all analysis results,
+figures, and tables in a single call. Modules auto-hide when their parameters
+are left at `NULL`.
+
+```{r report, eval = FALSE}
+render_report(
+  sample_sheet          = sample_sheet,
+  consensus_peaks       = consensus_peaks,
+  genome                = "hg38",
+  target_group          = "Treatment",
+  ref_group             = "Control",
+  super_domain_feature  = "Intensity",
+  output_file           = "epiPortrait_analysis.html"
+)
+```
+
+You can also create an R Markdown document from the built-in template:
+*File > New File > R Markdown... > From Template > epiPortrait Report*.
+
+---
+
+# Application Scenarios {#scenarios}
+
+This section illustrates how epiPortrait's modules combine to address
+specific biological questions across common experimental designs.
+
+## Scenario A: Drug Treatment Reshapes the H3K27ac Regulatory Landscape {.tabset}
+
+**Biological context.** A compound inhibits a chromatin remodeller. Standard
+differential binding (DiffBind/csaw) on H3K27ac ChIP-seq identifies 1,200
+gained and 800 lost peaks at FDR < 0.05. But does the treatment also change
+the **physical architecture** of regulatory elements — making enhancers
+broader, sharper, or asymmetrically distributed?
+
+### Analysis Strategy
+
+1. **Portrait matrix** on consensus peaks from all samples
+2. **MANOVA shape shift test** across all four dimensions — this detects
+   conformational changes missed by DiffBind
+3. **Classify** shifted regions into concentration, flattening, polarity
+   shift, gain, loss, and complex
+4. **Overlay tracks** validate the top candidates per class
+5. **Enrichment** per shape class reveals distinct biology: flattening in
+   super-enhancers of identity genes, concentration at signalling pathway
+   promoters
+
+```{r scenario-a, eval = FALSE}
+# After building the portrait matrix and running MANOVA + classification:
+shift_res <- classify_shape_shift(se, shift_res,
+  target_group = "Drug", ref_group = "DMSO")
+
+# Compare: how many shape-shifted peaks are NOT differentially bound?
+diff_peaks <- rownames(diff_res)[diff_res$adj.P.Val < 0.05]
+shape_peaks <- shift_res$Peak_ID[shift_res$adj.P.Val < 0.05]
+shape_only <- setdiff(shape_peaks, diff_peaks)
+
+cat(sprintf(
+  "%d peaks with shape shift but no significant change in total Intensity.\n",
+  length(shape_only)
+))
+
+# Flattening events at super-enhancers
+flattened <- shift_res[shift_res$Shape_Class == "Flattening" & shift_res$adj.P.Val < 0.05, ]
+# These are candidate regions where the drug causes regulatory broadening
+```
+
+### Interpretation Checklist
+
+| Question | epiPortrait Answer |
+|:---------|:-------------------|
+| Are there shape changes invisible to DiffBind? | Compare `shape_peaks` vs `diff_peaks` overlap |
+| Which shape class dominates the treatment response? | `table(shift_res$Shape_Class)` on significant hits |
+| Are flattened regions enriched at super-enhancers? | Cross-reference with `call_super_domains(se, "Intensity")` |
+| Do concentration events map to acute-response genes? | `enrich_shape_shifted()` GO enrichment per class |
+
+## Scenario B: Disease vs Normal — Finding Latent Regulatory Remodelling {.tabset}
+
+**Biological context.** ATAC-seq on tumour vs adjacent normal tissue. Most
+analyses focus on differentially accessible peaks. However, tumour
+epigenomes often exhibit **broadening of accessibility domains** at
+oncogene loci and **sharpening at tumour-suppressor promoters** —
+conformational changes that may not produce large logFC in total
+accessibility.
+
+### Analysis Strategy
+
+1. Build the portrait matrix on a **comprehensive consensus peak set**
+   (union of all peaks, filtered for reproducibility ≥ 2 samples)
+2. Avoid stitching — tumour-specific peaks may be biologically real, and
+   stitching can merge them with background
+3. MANOVA with `block_var = "Patient"` if paired tumour-normal samples exist
+4. Focus classification on `Flattening` and `Concentration` — these are the
+   most interpretable in cancer epigenetics
+5. Overlay tracks for the top 5 per class
+6. Export IGV session for oncologist review
+
+```{r scenario-b, eval = FALSE}
+# Paired tumour-normal design
+shift_res <- test_global_shape_shift(
+  se,
+  group_var = "Condition",
+  block_var = "Patient",
+  test      = "Pillai"
+)
+
+# Classification with stricter thresholds for clinical relevance
+shift_res <- classify_shape_shift(
+  se, shift_res,
+  target_group = "Tumour",
+  ref_group    = "Normal",
+  fc_threshold = 0.7,          # more stringent
+  skewness_threshold = 0.4
+)
+
+# Prioritise: Flattening at known oncogene loci
+flattened <- shift_res[
+  shift_res$Shape_Class == "Flattening" &
+  shift_res$adj.P.Val < 0.01,
+]
+```
+
+### Key Considerations for Clinical Cohorts
+
+- **Batch effects**: If samples were processed in multiple batches, include
+  `batch` as a covariate: `formula = ~ batch + Condition`
+- **Sample size**: For n < 5 per group, prefer the `Pillai` test statistic
+  (most robust to unequal covariance) and `partial_eta_sq` as the primary
+  ranking metric rather than P-value alone
+- **Replication**: Shape-shifted peaks at known disease loci should be
+  validated by ChIP-qPCR of the summit region, specifically measuring
+  peak shape (not just enrichment)
+
+## Scenario C: Time-Course Differentiation — Detecting Temporal Shape Drift {.tabset}
+
+**Biological context.** ATAC-seq or H3K27ac at 0, 2, 6, 24, and 72 hours
+of differentiation. The standard approach (pairwise DE at each timepoint
+vs 0h) generates 4 separate lists with no model of temporal coherence.
+`test_temporal_shape_shift()` uses polynomial contrasts to partition
+multivariate variance into linear, quadratic, and cubic trend components.
+
+### Analysis Strategy
+
+1. Build portrait matrix across all timepoints
+2. `test_temporal_shape_shift()` with `poly_order = 3`
+3. Classify peaks by their dominant trend type:
+   - **Linear**: monotonic broadening (enhancer maturation) or sharpening
+     (promoter commitment)
+   - **Quadratic**: transient opening at pioneer factor targets, peaking
+     at intermediate timepoints
+   - **Cubic**: oscillatory remodelling — often at cell-cycle or circadian
+     loci
+4. Per-trend functional enrichment
+
+```{r scenario-c, eval = FALSE}
+temporal_res <- test_temporal_shape_shift(
+  se,
+  time_var   = "Hour",
+  poly_order = 3,
+  workers    = 4
+)
+
+# Categorise by dominant trend
+temporal_res$Dominant_Trend <- apply(temporal_res, 1, function(row) {
+  pvals <- c(
+    Linear    = as.numeric(row["Linear_Pval"]),
+    Quadratic = as.numeric(row["Quadratic_Pval"]),
+    Cubic     = as.numeric(row["Cubic_Pval"])
+  )
+  if (all(is.na(pvals))) return("None")
+  names(which.min(pvals))
+})
+
+table(temporal_res$Dominant_Trend)
+
+# Quadratic trend: transient opening — candidate pioneer factor targets
+quad_peaks <- temporal_res[
+  temporal_res$Dominant_Trend == "Quadratic" &
+  temporal_res$adj.P.Val < 0.05,
+]
+```
+
+### Interpretation of Polynomial Trends
+
+| Trend | Biological Process | Expected Pattern |
+|:------|:-------------------|:-----------------|
+| **Linear (.L)** | Enhancer maturation, silencing progression | Monotonic Width increase or decrease |
+| **Quadratic (.Q)** | Pioneer factor wave, transient stress response | Peak-then-collapse or dip-then-rise |
+| **Cubic (.C)** | Circadian rhythm, cell-cycle oscillation | Two inflection points |
+| **Null** | Constitutively active or stably silent | Flat over time |
+
+## Scenario D: Tumour Heterogeneity — Single-Sample Outlier Analysis {.tabset}
+
+**Biological context.** A cohort of 20 tumour samples with no matched
+normals. You want to identify regulatory regions where individual tumours
+exhibit extreme conformational departures from the cohort norm — these
+may represent private driver events, subclonal regulatory rewiring, or
+technical artefacts requiring QC exclusion.
+
+### Analysis Strategy
+
+1. Build portrait matrix on all 20 samples
+2. `detect_conformational_outliers()` with robust MCD estimation on the
+   full cohort → identifies domains pervasively aberrant in many samples
+3. Leave-one-out analysis: for each tumour, set it as the query and the
+   remaining 19 as reference — detects sample-specific outliers
+4. Manhattan plot of outlier scores coloured by recurrence across samples
+5. Samples driving the most outliers are flagged for QC or deeper
+   characterisation
+
+```{r scenario-d, eval = FALSE}
+# Cohort-level outlier scan
+cohort_outliers <- detect_conformational_outliers(
+  se, method = "robust"
+)
+
+# Leave-one-out per-sample analysis
+sample_outlier_counts <- sapply(colnames(se), function(s) {
+  res <- detect_conformational_outliers(
+    se,
+    method      = "robust",
+    ref_samples = setdiff(colnames(se), s)
+  )
+  sum(res$Outlier_Flag, na.rm = TRUE)
+})
+
+# Flag samples with excessive outliers (> 3 × median)
+threshold <- 3 * median(sample_outlier_counts)
+flag_samples <- names(sample_outlier_counts)[sample_outlier_counts > threshold]
+cat(sprintf("%d samples flagged with > %d outliers each.\n",
+            length(flag_samples), threshold))
+```
+
+---
+
+# Best Practices & Parameter Tuning {#best-practices}
+
+## Choosing the Right bg_quantile
+
+The `bg_quantile` parameter controls the **Valley Trap** — the fraction of
+lowest-intensity positions within each domain excluded from skewness
+estimation. This prevents background noise from dominating the skewness
+signal.
+
+| Data Type | Recommended bg_quantile | Rationale |
+|:----------|:------------------------|:----------|
+| ChIP-seq (H3K27ac, H3K4me3) | 0.10 (default) | Moderate signal-to-noise; 10% gate removes most background |
+| ChIP-seq (H3K9me3, broad marks) | 0.05 | Broad domains; too aggressive gating removes real signal tail |
+| ATAC-seq | 0.10–0.15 | Nucleosome-free regions have sharp peaks; background is low |
+| CUT&Tag | 0.05–0.10 | Very high signal-to-noise; lower gate preserves dynamic range |
+| Low-coverage data (< 10M reads) | 0.15–0.20 | Higher gate compensates for sparser coverage |
+
+## Normalization Method Selection
+
+```{r norm-best-practices, eval = FALSE}
+# Start with the default
+se <- normalize_portrait(se, method = "TotalSignal")
+
+# Check if batch dominates biological signal
+pca_before <- plot_portrait_pca(se, feature = "Intensity", group_var = "Condition")
+
+# If batch effects are visible, escalate to Quantile
+se <- normalize_portrait(se, method = "Quantile")
+
+# Z-score is for clustering ONLY — never feed Z-scored data to MANOVA or limma
+# The Z-score transformation destroys the covariance structure that MANOVA depends on
+```
+
+**Decision flow:**
+
+1. Try `TotalSignal` → check PCA
+2. If PC1 separates by batch, not biology → try `Quantile`
+3. If `Quantile` over-corrects (PC1 now separates nothing) → `TotalSignal`
+   with explicit batch covariate in `test_global_shape_shift(formula = ~ batch + condition)`
+4. Never use `Z-score` before differential testing
+
+## MANOVA Test Statistic Selection
+
+| Statistic | Robustness | Power | When to Use |
+|:----------|:-----------|:------|:------------|
+| **Pillai** (default) | Highest | Moderate | Most scenarios; unequal group sizes; violated assumptions |
+| **Wilks** | Moderate | Highest | Balanced designs with equal covariance |
+| **Hotelling-Lawley** | Low | High | Large n, balanced, few dimensions |
+| **Roy** | Lowest | Special case | When you expect the effect concentrated in one dimension |
+
+**Practical rule**: Always start with Pillai. If results look underpowered
+and your design is balanced with n ≥ 8 per group, try Wilks. Rarely need
+the others.
+
+## Sample Size Guidelines
+
+Based on `simulate_power()`:
+
+| n per Group | Detectable Effect (eta²) | Practical Meaning |
+|:------------|:-------------------------|:------------------|
+| 3 | ≥ 0.30 | Only very large, overt shape shifts |
+| 5 | ≥ 0.14 | Large conformational changes |
+| 8 | ≥ 0.06 | Moderate shifts (typical for perturbation experiments) |
+| 12+ | ≥ 0.03 | Subtle shifts; useful for patient cohort studies |
+
+**For grant writing**: Run `simulate_power()` with your expected effect
+size, then cite the resulting power curve to justify your requested
+replicate number.
+
+## Interpreting partial_eta_sq in Context
+
+`partial_eta_sq` is the proportion of multivariate variance in the 4D
+vector explained by group membership. Unlike a P-value, it does not
+depend on sample size and is directly comparable across peaks.
+
+- **0.01–0.06**: Subtle conformational shift. Biologically meaningful
+  only if reproducible across independent cohorts or supported by
+  orthogonal evidence (Hi-C, 4C, single-locus imaging).
+- **0.06–0.14**: Moderate shift. Typically the sweet spot for
+  perturbation experiments — large enough to be visually apparent in
+  overlay tracks.
+- **0.14–0.30**: Large shift. The peak is visibly different between
+  conditions. Suitable for focused follow-up (ChIP-qPCR, reporter assays).
+- **> 0.30**: Massive remodelling. Usually only seen with compound
+  treatments, genetic knockouts of chromatin modifiers, or comparing
+  entirely different cell types.
+
+---
+
+# Worked Example: Recovering Known Shape Shifts {#worked-example}
+
+The built-in `example_se` dataset contains 500 peaks across 6 samples
+(3 Control, 3 Treatment) with **5 types of ground-truth shape shifts**
+embedded by simulation. This section demonstrates epiPortrait's ability
+to recover these known shifts.
+
+```{r worked-setup}
+data(example_se)
+se <- example_se
+se <- normalize_portrait(se, method = "TotalSignal")
+
+# Ground truth labels
+true_classes <- mcols(rowRanges(se))$True_Class
+cat("Ground truth composition:\n")
+print(table(true_classes))
+```
+
+## Step 1: Run the Full Pipeline
+
+```{r worked-pipeline}
+shift_res <- test_global_shape_shift(se, group_var = "Condition", workers = 1)
+shift_res <- classify_shape_shift(se, shift_res,
+  target_group = "Treatment", ref_group = "Control")
+```
+
+## Step 2: Compare Predicted vs True Classes
+
+```{r worked-compare}
+# Merge predictions with ground truth
+shift_res$True_Class <- true_classes[shift_res$Peak_ID]
+
+# Confusion: which predicted classes correspond to which true shifts?
+confusion <- table(
+  Predicted = shift_res$Shape_Class[shift_res$adj.P.Val < 0.05],
+  Truth     = shift_res$True_Class[shift_res$adj.P.Val < 0.05]
+)
+print(confusion)
+```
+
+## Step 3: Per-Class Recovery Rate
+
+```{r worked-recovery}
+# For each true class, what proportion is recovered as significant?
+for (tc in unique(true_classes)) {
+  idx <- which(shift_res$True_Class == tc)
+  n_sig <- sum(shift_res$adj.P.Val[idx] < 0.05, na.rm = TRUE)
+  cat(sprintf(
+    "%-20s: %3d / %3d recovered (%.1f%%)\n",
+    tc, n_sig, length(idx), 100 * n_sig / length(idx)
+  ))
+}
+```
+
+## Step 4: Visual Validation of the Top Hit
+
+```{r worked-visual, fig.width = 10, fig.height = 5, eval = FALSE}
+# Requires actual BigWig files on disk (example_se uses simulated paths).
+top_peak <- shift_res$Peak_ID[which.min(shift_res$adj.P.Val)]
+cat(sprintf("Top hit: %s (adj.P.Val = %.2e, true class = %s)\n",
+            top_peak, min(shift_res$adj.P.Val), shift_res$True_Class[which.min(shift_res$adj.P.Val)]))
+
+plot_shift_comparison(se,
+  peak_id  = top_peak,
+  group_var = "Condition",
+  group1   = "Control",
+  group2   = "Treatment",
+  extend_bp = 1000
+)
+```
+
+## Step 5: 4D Volcano — Where Do the Known Shifts Land?
+
+```{r worked-volcano, fig.width = 10, fig.height = 8}
+diff_res <- test_differential_feature(se,
+  feature = "Intensity",
+  group_var = "Condition",
+  target_group = "Treatment", ref_group = "Control",
+  method = "limma"
+)
+
+plot_portrait_volcano(diff_res, se,
+  target_group = "Treatment",
+  ref_group    = "Control",
+  p_cutoff     = 0.05,
+  fc_cutoff    = 1
+)
+```
+
+**Key takeaway from the worked example**: Concentration and Flattening
+events — where Intensity is stable but Height changes — are the scenarios
+where epiPortrait provides the greatest advantage over standard
+differential binding. These peaks would be invisible to DiffBind or DESeq2,
+but have near-perfect recovery rates by MANOVA.
+
+---
+
+# Troubleshooting {#troubleshooting}
+
+## MANOVA Returns All P-values = 1 or All P-values = 0
+
+| Symptom | Cause | Solution |
+|:--------|:------|:---------|
+| All adj.P.Val = 1 | Zero within-group variance in ≥ 3 of 4 dimensions (e.g., identical samples) | Check input data; ensure BigWig files are not identical copies |
+| All adj.P.Val = 1 | Wrong `term` specified for formula | Use the auto-selected term or explicitly name the correct model term |
+| All P.Val < 1e-10 | Groups are completely separated (e.g., different cell types) | This is expected; use `partial_eta_sq` to rank effect sizes instead |
+| `"MANOVA_Error"` in Status column | Singular covariance matrix for that peak | That peak has near-zero signal in all samples; these are automatically flagged and do not affect other peaks |
+
+## Skewness Values Are All Near Zero
+
+- Check that `bg_quantile` is not too high (e.g., > 0.3). If the Valley
+  Trap removes too much signal, the remaining positions may all have
+  similar values, producing skewness ≈ 0.
+- Verify that your peaks contain enough positions. For very narrow peaks
+  (e.g., < 50 bp), the number of base-pair-resolution BigWig positions
+  may be insufficient for robust skewness estimation. Consider using
+  `stitch_epi_peaks()` to create macro-domains first.
+
+## Memory Exhaustion with Large BigWig Files
+
+- Set `on_disk = TRUE` to use HDF5-backed matrices. This moves all assay
+  data out of RAM.
+- Set `cache_dir` to a persistent directory. The first run is
+  memory-intensive (BigWig import), but subsequent runs with the same
+  peaks skip I/O entirely.
+- Reduce `workers` to 1 for memory-constrained environments. Multiple
+  workers each load their own BigWig data into memory.
+
+## MCD Covariance Estimation Fails
+
+```
+Error: Only 7 valid domains; need at least 8 for reliable
+covariance estimation.
+```
+
+- Switch to `method = "classic"` when the dataset is too small for MCD.
+  The classic estimator only needs n > 4 (the number of dimensions).
+- Alternatively, increase `collapse_fun` aggregation by providing more
+  reference samples.
+
+## Classification Returns Mostly "Stable" Despite Significant MANOVA
+
+- Lower `fc_threshold` from the default 0.5 to 0.3. MANOVA may detect
+  a consistent but subtle shift across multiple dimensions that none
+  individually exceeds 0.5 log2FC.
+- Check that your `target_group` and `ref_group` match the levels in
+  `colData(se)`.
+- If `Skewness_Delta` is consistently near zero, your data may have no
+  directional asymmetry — this is common in symmetric peaks and is not
+  a bug.
+
+## Paired Design Gives Fewer Results Than Unpaired
+
+MANOVA with a blocking factor consumes additional degrees of freedom
+(1 per block after the first). With n = 3 pairs, the effective residual
+df for MANOVA is 1, which reduces power substantially. Consider:
+- Using `test_differential_feature()` with `method = "limma"` and
+  `block_var` for per-dimension tests in small paired designs
+- Increasing sample size if paired MANOVA is essential
+
+---
+
+# Reproducibility
+
+All analyses in this vignette were conducted with the following software
+versions. For reproducible results, set a seed (`set.seed()`) before running
+simulation-based functions (`simulate_power()`, `detect_conformational_outliers()`
+with MCD, etc.).
+
+```{r session-info}
+sessionInfo()
+```
