@@ -32,6 +32,9 @@ jobs:
           extra-packages: |
             any::BiocCheck
             any::rcmdcheck
+            any::txdbmaker
+            any::edgeR
+            any::org.Hs.eg.db
           needs: check
 
       - name: Build tarball

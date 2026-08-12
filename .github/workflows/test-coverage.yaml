@@ -30,6 +30,9 @@ jobs:
             any::covr
             any::BiocManager
             any::testthat
+            any::txdbmaker
+            any::edgeR
+            any::org.Hs.eg.db
           needs: check
 
       - name: Coverage

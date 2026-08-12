@@ -44,6 +44,9 @@ jobs:
             any::BiocManager
             any::testthat
             any::devtools
+            any::txdbmaker
+            any::edgeR
+            any::org.Hs.eg.db
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2
