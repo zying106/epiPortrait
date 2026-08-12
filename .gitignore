@@ -24,3 +24,18 @@ inst/doc/
 *.swo
 *~
 ~
+/doc/
+/Meta/
+
+# Development artifacts
+Re1.zip
+*.h5
+cache/
+epiPortrait_*.tar.gz
+..Rcheck/
+epiPortrait.Rcheck/
+generated_plots/
+README.html
+README.tex
+Rplots.pdf
+validation/

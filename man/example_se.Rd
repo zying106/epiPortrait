@@ -3,14 +3,21 @@
 \docType{data}
 \name{example_se}
 \alias{example_se}
-\title{Example 4D Epigenetic Portrait Dataset}
+\title{Example Epigenetic Portrait Dataset}
 \format{
 A \code{SummarizedExperiment} object with:
 \describe{
-\item{assays}{4 matrices (Width, Intensity, Height, Skewness), each 500 x 6}
-\item{rowRanges}{GRanges with mcols including \code{True_Class} (factor with
-levels: Concentration, Flattening, Polarity_Shift, Global_Gain, Global_Loss)}
-\item{colData}{SampleID, Condition (Control/Treatment), bw_path}
+\item{assays}{5 matrices (Intensity, SignalDispersion, NativeMaxPeakWidth,
+NativeOccupiedWidth, NativePeakCount), each 500 x 6}
+\item{rowRanges}{GRanges on chr21 (hg38, all intervals in-bounds)}
+\item{rowData}{includes \code{Simulation_Scenario} (the generative
+mechanism: \code{Typical} / \code{Intensity-high} /
+\code{Breadth-contraction} / \code{Dual-with-breadth-contraction}) and
+\code{IntervalWidth} (static genomic interval length)}
+\item{colData}{SampleID, Condition (Control/Treatment), BioReplicate,
+bw_path (NA), peak_path (NA)}
+\item{metadata}{native_peaks, native_peak_available, feature_definitions,
+simulation_provenance}
 }
 }
 \usage{
@@ -18,15 +25,17 @@ data("example_se")
 }
 \description{
 A simulated \code{SummarizedExperiment} containing 500 genomic
-domains with 4D geometric features (Width, Intensity, Height, Skewness)
-measured across 6 samples (3 Control, 3 Treatment). The dataset includes
-5 types of ground-truth shape shifts embedded by simulation, enabling
-method validation against a known answer.
+domains on chr21 (hg38) with quantitative features (Intensity,
+SignalDispersion, NativeMaxPeakWidth, NativeOccupiedWidth, NativePeakCount)
+measured across 6 samples (3 Control, 3 Treatment). The synthetic data
+deliberately mixes replicate-support patterns (strong 3/3, boundary 2/3,
+weak 1/3, and a few no-call domains) so replicate-aware calling is
+instructive; see \code{metadata(example_se)$simulation_provenance}.
 }
 \examples{
 data(example_se)
 example_se
-table(SummarizedExperiment::mcols(
-  SummarizedExperiment::rowRanges(example_se))$True_Class)
+SummarizedExperiment::assayNames(example_se)
+S4Vectors::metadata(example_se)$simulation_provenance
 }
 \keyword{datasets}

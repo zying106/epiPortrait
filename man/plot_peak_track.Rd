@@ -9,7 +9,9 @@ plot_peak_track(
   peak_id,
   group_var = "Condition",
   extend_bp = 1000,
-  smooth_window = 1
+  smooth_window = 1,
+  free_y = FALSE,
+  show_native_occupancy = FALSE
 )
 }
 \arguments{
@@ -22,12 +24,34 @@ plot_peak_track(
 \item{extend_bp}{Numeric. Number of base pairs to extend the view around the peak (default: 1000).}
 
 \item{smooth_window}{Numeric. Window size for smoothing the coverage (default: 1, no smoothing).}
+
+\item{free_y}{Logical. Use independent y-scales per facet panel (default
+FALSE = fixed y, so cross-sample intensity differences are visually
+preserved rather than auto-scaled away).}
+
+\item{show_native_occupancy}{Logical. Overlay the per-sample
+NativeOccupiedWidth (sum of reduced native peak widths inside the domain)
+as horizontal bands (default FALSE). The band is centred on the candidate
+domain and is a per-sample geometry view, not a new biological call.}
 }
 \value{
 A ggplot object.
 }
 \description{
-Generates a track-like visualization of the raw BigWig coverage for a specific
-peak across all samples. This allows for direct visual validation of the "Shape Shift"
-detected by epiPortrait.
+Generates a track-like visualization of the raw BigWig coverage
+for a specific domain across all samples, for direct visual validation.
+}
+\examples{
+if (.Platform$OS.type != "windows") {
+  extdata <- system.file("extdata", package = "epiPortrait")
+  samples <- data.frame(
+    SampleID  = c("C1", "C2", "T1", "T2"),
+    Condition = c("Control", "Control", "Treatment", "Treatment"),
+    bw_path   = file.path(extdata, c("C1.bw", "C2.bw", "T1.bw", "T2.bw")))
+  se_tiny <- build_portrait_matrix(
+    samples, consensus_peaks = rtracklayer::import(file.path(extdata, "peaks.bed")),
+    workers = 1)
+  plot_peak_track(se_tiny, peak_id = rownames(se_tiny)[1],
+                  group_var = "Condition")
+}
 }

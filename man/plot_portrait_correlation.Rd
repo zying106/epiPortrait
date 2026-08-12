@@ -4,18 +4,45 @@
 \alias{plot_portrait_correlation}
 \title{Sample Correlation Heatmap for epiPortrait Features}
 \usage{
-plot_portrait_correlation(se, feature = "Intensity")
+plot_portrait_correlation(
+  se,
+  feature = "Intensity",
+  method = c("spearman", "pearson"),
+  limits = NULL,
+  dynamic_mid = TRUE
+)
 }
 \arguments{
 \item{se}{A SummarizedExperiment object.}
 
 \item{feature}{Character. The assay to use (default: "Intensity").}
+
+\item{method}{Character. "spearman" (default) or "pearson".}
+
+\item{limits}{Numeric of length 2 or NULL. Colour-scale limits for the
+correlation. Default \code{NULL} follows the observed data range so that
+within/between-group differences remain visible even when all samples are
+highly correlated (typical for biological replicates); when the observed
+range does not span 0, the colour midpoint is the range centre (see
+\code{dynamic_mid}). Pass an explicit fixed scale (e.g. \code{c(-1, 1)})
+to keep a statistically anchored, cross-dataset-comparable scale with
+0 = unrelated as the semantic midpoint.}
+
+\item{dynamic_mid}{Logical. When \code{limits = NULL}, whether to centre the
+colour scale on the observed data midpoint (TRUE, default) instead of the
+fixed 0 anchor. Centring on the data maximises visual contrast between
+samples; centring on 0 keeps the "unrelated" semantics but compresses the
+palette when all correlations are high.}
 }
 \value{
 A ggplot object.
 }
 \description{
-Computes and visualizes the Pearson correlation between samples based
-on their geometric portraits. Returns a ggplot object consistent with the rest of the
-epiPortrait visualization suite.
+Computes and visualizes the Spearman (default, robust to
+heavy-tailed epigenomic signal) or Pearson correlation between samples.
+}
+\examples{
+data(example_se)
+plot_portrait_correlation(example_se, feature = "Intensity")
+plot_portrait_correlation(example_se, feature = "Intensity", limits = c(-1, 1))
 }

@@ -1,5 +1,0 @@
-name: epiPortrait Report
-description: >
-  Parameterized report for epiPortrait 4D geometric epigenetic profiling.
-  Auto-hides modules when optional parameters are not provided.
-create_dir: false

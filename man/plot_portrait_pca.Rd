@@ -8,7 +8,8 @@ plot_portrait_pca(
   se,
   feature = "Intensity",
   group_var = "Condition",
-  n_top = 500
+  n_top = 500,
+  features = NULL
 )
 }
 \arguments{
@@ -19,11 +20,21 @@ plot_portrait_pca(
 \item{group_var}{Character. The grouping variable for coloring points.}
 
 \item{n_top}{Numeric. Use only the top N most variable peaks (default: 500).}
+
+\item{features}{Character vector. Additional assays to include in a
+combined-feature PCA (e.g. \code{c("Intensity", "SignalDispersion")}). The
+top-variable domains of each feature are concatenated into the PCA
+variable set. Default NULL uses \code{feature} only.}
 }
 \value{
 A ggplot object.
 }
 \description{
-Performs Principal Component Analysis (PCA) on a specific geometric feature
-(e.g., Intensity or Height) to visualize sample clustering and batch effects.
+Performs Principal Component Analysis (PCA) on a specific
+quantitative domain feature
+(e.g., Intensity or SignalDispersion) to visualize sample clustering and batch effects.
+}
+\examples{
+data(example_se)
+plot_portrait_pca(example_se, feature = "Intensity", group_var = "Condition")
 }

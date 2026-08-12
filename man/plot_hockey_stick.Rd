@@ -7,24 +7,59 @@
 plot_hockey_stick(
   se,
   feature = "Intensity",
-  label_genes = TRUE,
-  top_n_label = 10
+  label_genes = FALSE,
+  top_n_label = 10,
+  group = NULL,
+  group_var = "Condition",
+  show_cutoff = TRUE,
+  show_cutoff_band = TRUE
 )
 }
 \arguments{
 \item{se}{A SummarizedExperiment object after running \code{call_super_domains}.}
 
-\item{feature}{Character. Which feature to plot ("Intensity", "Width", or "Height").}
+\item{feature}{Character. Which feature to plot ("Intensity",
+"SignalDispersion", or "Breadth"; legacy aliases accepted). For
+\code{"Breadth"} the plot shows the replicate-specific native PeakWidth
+rank curve from \code{metadata(se)$breadth_peak_calls}, and \code{group}
+must be a sample (replicate) name.}
 
-\item{label_genes}{Logical. If SYMBOL column exists in rowData, label top super-domains?}
+\item{label_genes}{Logical. Label top super-domains (default FALSE; the
+ranking curve and cutoff are the message, per-domain labels are opt-in).}
 
 \item{top_n_label}{Integer. Number of top domains to label (default: 10).}
+
+\item{group}{Character or NULL. For signal features: a condition group
+(per-group call/rank columns \code{<feature>_Call__<group>}, descriptive
+median replicate cutoff), OR a single sample name when the object was
+called with \code{mode = "per_sample"} — the sample's own ranked
+distribution is plotted with its per-sample cutoff. For
+\code{feature = "Breadth"}: the replicate whose native PeakWidth
+distribution to plot (required). NULL (default) uses the consensus
+\code{<feature>_Domain_Type} for signal features.}
+
+\item{group_var}{Character. colData column used for groups when
+\code{group} is provided (default "Condition").}
+
+\item{show_cutoff}{Logical. Draw the cutoff as a dashed horizontal guide
+(default TRUE).}
+
+\item{show_cutoff_band}{Logical. Draw a light horizontal band for the
+replicate cutoff stability interval (default TRUE).}
 }
 \value{
 A ggplot object.
 }
 \description{
-Generates a ROSE-style ranking plot. Peaks are ranked by their feature
-value (Intensity, Width, or Height). Super-domains above the inflection point
-are highlighted.
+Generates a ranking plot for super-domain identification. Domains are ranked by
+their feature value; super-domains are highlighted and the cutoff (and, when
+available, the replicate-cutoff stability band) is drawn from the object's
+stored provenance. In per-group mode the cutoff is shown as a descriptive
+median replicate cutoff, never as the unique biological decision boundary.
+}
+\examples{
+data(example_se)
+se <- call_super_domains(example_se, feature = "Intensity",
+                         method = "tangent", log_transform = FALSE)
+plot_hockey_stick(se, feature = "Intensity", label_genes = FALSE)
 }

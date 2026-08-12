@@ -4,49 +4,60 @@
 \name{epiPortrait}
 \alias{epiPortrait-package}
 \alias{epiPortrait}
-\title{epiPortrait: Multi-dimensional Geometric Profiling of Epigenetic Landscapes}
+\title{epiPortrait: Replicate-Aware Epigenomic Domain Profiling}
 \description{
-epiPortrait is a computational framework for analyzing epigenetic signals
-(ChIP-seq, ATAC-seq, CUT&Tag) beyond simple intensity. It extracts 4D geometric
-features — \strong{Width}, \strong{Intensity}, \strong{Height}, and \strong{Skewness} — from genomic
-domains and employs multivariate statistical testing (MANOVA) to identify "Shape
-Shift" events where the physical conformation of the epigenetic landscape changes
-between conditions, even when raw read counts do not.
+epiPortrait provides replicate-aware quantitative phenotyping of epigenomic
+domains across biological samples and conditions. Each shared genomic domain
+is characterized by three measurement layers: \strong{Intensity} (integrated
+signal magnitude), \strong{native peak breadth geometry} (per-replicate native
+peak width), and \strong{SignalDispersion} (continuous within-domain signal
+architecture). Intensity and Breadth are the canonical classification axes;
+super-domain states (Intensity-Super, Breadth-Super, Dual-Super) are called
+with replicate-level evidence and transparent support rules, while
+SignalDispersion is retained as a secondary architecture descriptor. The
+package supports condition transitions, continuous domain-width remodeling,
+signal quality control, genome-aware domain annotation, optional BEDPE
+contact evidence, expression-aware candidate-gene prioritization, and
+publication-oriented visualization. Primary use case: histone-mark ChIP-seq /
+CUT&Tag; continuous-track workflows also apply to ATAC-seq-derived domains.
 }
 \section{Core workflow}{
 
 \enumerate{
-\item \code{\link{get_consensus_peaks}} — Build consensus peak set
+\item \code{\link{get_consensus_peaks}} — Build consensus domain universe
 \item \code{\link{stitch_epi_peaks}} — Stitch proximal peaks into macro-domains
-\item \code{\link{build_portrait_matrix}} — Extract 4D geometric matrix from BigWigs
-\item \code{\link{normalize_portrait}} — Normalize Intensity and Height assays
-\item \code{\link{test_global_shape_shift}} — MANOVA-based multivariate shape testing
-\item \code{\link{test_differential_feature}} — Univariate differential testing per dimension
-\item \code{\link{annotate_epi_peaks}} — Map domains to target genes
+\item \code{\link{build_portrait_matrix}} — Extract portrait matrix from BigWigs
+\item \code{\link{normalize_portrait}} — Normalize Intensity while preserving SignalDispersion
+\item \code{\link{call_super_domains}} — Intensity / peak-level Breadth calling
+\item \code{\link{annotate_epi_domains}} — Domain-aware annotation & candidate genes
 }
 }
 
 \section{Visualization}{
 
 \itemize{
-\item \code{\link{plot_portrait_pca}} — PCA of geometric features
+\item \code{\link{plot_portrait_pca}} — PCA of quantitative domain features
 \item \code{\link{plot_portrait_correlation}} — Sample correlation heatmap
-\item \code{\link{plot_portrait_volcano}} — 4D volcano plot
-\item \code{\link{plot_peak_portrait}} — Radar chart of single-peak conformation
 \item \code{\link{plot_peak_track}} — Raw BigWig coverage track
-\item \code{\link{plot_hockey_stick}} — ROSE-style super-domain identification
+\item \code{\link{plot_hockey_stick}} — Super-domain ranking plot
 }
 }
 
 \section{Supplementary}{
 
 \itemize{
-\item \code{\link{call_super_domains}} — Identify super-elements / broad-domains
+\item \code{\link{combine_superdomain_calls}} — Combine Intensity/Breadth super calls
+\item \code{\link{compare_superdomains}} — Condition-aware super-domain transitions
 \item \code{\link{filter_promoter_peaks}} — Exclude promoter-proximal peaks
-\item \code{\link{export_shifted_bed}} — Export results to BED format
+\item \code{\link{filter_blacklist}} — Filter blacklisted regions
 }
 }
 
+\examples{
+data(example_se)
+se <- call_super_domains(example_se, feature = "Intensity", verbose = FALSE)
+table(SummarizedExperiment::rowData(se)$Intensity_Domain_Type)
+}
 \seealso{
 Useful links:
 \itemize{
@@ -56,6 +67,13 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Ying ZHANG \email{zhangying@example.com} (\href{https://orcid.org/0009-0005-9644-7062}{ORCID})
+\strong{Maintainer}: Ying ZHANG \email{12207129@zju.edu.cn} (\href{https://orcid.org/0009-0005-9644-7062}{ORCID})
+
+Other contributors:
+\itemize{
+  \item Xingze HUANG \email{22407026@zju.edu.cn} (\href{https://orcid.org/0009-0002-9286-1344}{ORCID}) [contributor]
+  \item Ye CHEN \email{chenyephd@zju.edu.cn} [contributor]
+  \item Liang XU \email{xuliang.phd@zju.edu.cn} (This work is funded by the Fundamental Research Funds for the Central Universities (226-2025-00101) and the National Natural Science Foundation of China (32270746, 82203247, 82203415).) [contributor, funder]
+}
 
 }

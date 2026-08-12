@@ -1,59 +1,82 @@
 Package: epiPortrait
 Type: Package
-Title: Multi-Dimensional Geometric Profiling of Epigenetic Landscapes
-Version: 0.1.0
+Title: Replicate-Aware Epigenomic Domain Profiling
+Version: 0.99.0
+Depends: R (>= 4.5.0)
 Authors@R: c(
-    person(given = "Ying", family = "ZHANG",
-           role = c("aut", "cre"),
-           email = "zhangying@example.com",
-           comment = c(ORCID = "0009-0005-9644-7062")))
-Description: epiPortrait is a computational framework for analyzing epigenetic
-    signals (ChIP-seq, ATAC-seq, CUT&Tag) beyond simple intensity. It extracts
-    four-dimensional geometric features (Width, Intensity, Height, Skewness)
-    from genomic domains and employs multivariate statistical testing (MANOVA)
-    to identify Shape Shift events where the physical conformation of the
-    epigenetic landscape changes between conditions, even when raw read counts
-    do not. The package provides a complete pipeline from consensus peak
-    calling and portrait matrix construction through statistical testing,
-    shape classification, annotation, enrichment, power analysis, and
-    publication-ready visualizations.
-License: GPL (>= 3)
+    person(given = "Ying", family = "ZHANG", 
+           role = c("aut", "cre"), 
+           email = "12207129@zju.edu.cn", 
+           comment = c(ORCID = "0009-0005-9644-7062")),
+    person(given = "Xingze", family = "HUANG",
+           role = c("ctb"),
+           email = "22407026@zju.edu.cn",
+           comment = c(ORCID = "0009-0002-9286-1344")),
+    person(given = "Ye", family = "CHEN",
+           role = "ctb",
+           email = "chenyephd@zju.edu.cn"),
+    person(given = "Liang", family = "XU",
+           role = c("ctb", "fnd"), 
+           email = "xuliang.phd@zju.edu.cn",
+           comment = "This work is funded by the Fundamental Research Funds for the Central Universities (226-2025-00101) and the National Natural Science Foundation of China (32270746, 82203247, 82203415).")
+  )
+Description: epiPortrait is a replicate-aware computational framework for
+    quantitative phenotyping and comparison of epigenomic domains from
+    normalized continuous signal tracks and per-sample native peak/domain
+    calls (histone-mark ChIP-seq / CUT&Tag as the primary use case; also
+    applicable to ATAC-seq-derived domains). It characterizes each shared
+    genomic domain by integrated signal magnitude (Intensity),
+    sample-specific native peak breadth geometry, and continuous
+    within-domain signal architecture (SignalDispersion). Replicate-level
+    evidence is retained explicitly and aggregated with transparent support
+    rules, enabling condition-specific classification of Intensity-Super,
+    Breadth-Super, Dual-Super, Typical, or Uncertain domain states without
+    using the consensus-domain width as the breadth caller. The package
+    further supports condition transitions, continuous domain-width
+    remodeling, signal quality control, genome-aware domain annotation,
+    optional BEDPE contact evidence, expression-aware candidate-gene
+    prioritization, and publication-oriented visualization.
+License: GPL (>= 3) + file LICENSE
 Encoding: UTF-8
-LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Config/testthat/edition: 3
-biocViews: ChIPSeq, Epigenetics, Coverage, DifferentialExpression, ATACSeq,
-    MultipleComparison, Normalization, PrincipalComponent, Visualization,
-    SystemsBiology, GenomeAnnotation, Classification, QualityControl,
-    Clustering
+biocViews: ChIPSeq, Epigenetics, Coverage, Normalization,
+    GenomeAnnotation, QualityControl, Visualization,
+    PrincipalComponent
 URL: https://github.com/zhangying/epiPortrait
 BugReports: https://github.com/zhangying/epiPortrait/issues
 Imports:
+    digest,
+    GenomeInfoDb,
     GenomicRanges,
     rtracklayer,
     SummarizedExperiment,
     BiocParallel,
     S4Vectors,
     IRanges,
-    ChIPseeker,
     GenomicFeatures,
     ggplot2,
+    scales,
     ggrepel,
     limma,
-    moments,
-    stats
+    methods,
+    stats,
+    AnnotationDbi,
+    withr
 Suggests:
-    AnnotationHub,
     BiocStyle,
-    HDF5Array,
-    cowplot,
     edgeR,
+    HDF5Array,
     knitr,
-    clusterProfiler,
     org.Hs.eg.db,
     org.Mm.eg.db,
+    ragg,
     rmarkdown,
-    robustbase,
-    testthat
+    svglite,
+    testthat,
+    txdbmaker,
+    TxDb.Hsapiens.UCSC.hg19.knownGene,
+    TxDb.Hsapiens.UCSC.hg38.knownGene,
+    TxDb.Mmusculus.UCSC.mm10.knownGene
 VignetteBuilder: knitr

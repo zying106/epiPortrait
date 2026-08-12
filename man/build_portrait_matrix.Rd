@@ -8,42 +8,106 @@ build_portrait_matrix(
   sample_sheet,
   consensus_peaks,
   workers = 1,
-  bg_quantile = 0.1,
   on_disk = FALSE,
   h5_dir = "epiPortrait_h5",
   cache_dir = NULL,
-  custom_features = NULL
+  custom_features = NULL,
+  negative_policy = c("error", "clip_zero", "allow"),
+  fail_action = c("stop", "drop")
 )
 }
 \arguments{
-\item{sample_sheet}{A \code{data.frame} containing 'SampleID', 'Condition', and 'bw_path'.}
+\item{sample_sheet}{A \code{data.frame} containing at least 'SampleID',
+'Condition', and 'bw_path'. Optional \code{peak_path}: path to the
+sample-specific native peak call file (BED/narrowPeak/broadPeak readable by
+\code{rtracklayer::import}); when absent, native breadth geometry is not
+computed and Breadth-Super calling is unavailable for that sample.
+Recommended additional metadata columns, all passed through to
+colData(se): 'Replicate', 'Mark', 'Genome', 'Normalization', 'SignalType',
+'BinSize', 'SpikeIn'. These enable provenance tracking and
+condition-aware replicate handling.}
 
-\item{consensus_peaks}{A \code{GRanges} object of unified/stitched peaks.}
+\item{consensus_peaks}{A \code{GRanges} object of unified/stitched peaks
+(the shared candidate domain universe).}
 
 \item{workers}{Integer. Number of threads for parallel processing (default: 1).}
-
-\item{bg_quantile}{Numeric (0-1). Signals below this quantile within each peak are
-excluded from skewness calculation to filter out background noise (Valley Trap).}
 
 \item{on_disk}{Logical. If TRUE, stores assays as HDF5 files on disk to save RAM,
 which is highly recommended for mammalian-scale BigWig processing.}
 
 \item{h5_dir}{Character. Directory to store HDF5 files if \code{on_disk = TRUE}.}
 
-\item{cache_dir}{Character or NULL. If provided, caches per-sample coverage views
-as RDS files in this directory. Subsequent calls with the same BigWig + consensus
-peaks + \code{bg_quantile} combination skip BigWig I/O entirely (default: NULL).}
+\item{cache_dir}{Character or NULL. If provided, caches per-sample RAW
+coverage views as RDS files in this directory. Subsequent calls with the same
+BigWig + consensus peaks combination skip BigWig I/O entirely (default: NULL).
+The cache stores raw (un-sanitized) coverage so that negative_policy and
+custom features can change between runs without cache pollution.}
 
 \item{custom_features}{A named list of functions. Each function must accept a
 single \code{NumericList} (the coverage view for one peak) and return a single
-numeric value. Results are added as additional assays alongside the core 4D
+numeric value. Results are added as additional assays alongside the core
 dimensions (e.g., \code{list(Entropy = function(x) ...)}).}
+
+\item{negative_policy}{Character. How to handle negative signal values in the
+BigWig tracks:
+\itemize{
+\item \code{"error"} (default): fail if any negative signal is found,
+forcing the user to provide non-negative (e.g. clipped,
+CPM/RPGC/spike-in) tracks.
+\item \code{"clip_zero"}: set negative values to 0 and continue, recording
+the negative fraction in the returned object.
+\item \code{"allow"}: keep negatives in the Intensity assay (use only
+for advanced within-sample Intensity analyses with an explicitly
+compatible downstream transform). Note that \code{SignalDispersion}
+always uses non-negative weights (negative values are clipped to 0
+internally, since signed signal is not a valid probability-like
+weight), and the default \code{log10(pmax(x,0)+1)} transform /
+tangent inflection of Super calling also clip negatives to 0.
+Signed tracks are not part of the recommended canonical workflow.
+}}
+
+\item{fail_action}{Character. Behavior when a BigWig cannot be imported
+\code{"stop"} (default) fails the whole run; \code{"drop"}
+excludes the failed sample(s) with a clear warning about the changed
+sample composition.}
 }
 \value{
-A \code{SummarizedExperiment} object containing 4 assays (The Portrait matrix).
+A \code{SummarizedExperiment} object. Core assays (domain x sample):
+\itemize{
+\item \code{Intensity}: integrated BigWig signal within the shared domain.
+\item \code{SignalDispersion}: signal-weighted genomic SD within the
+domain (secondary within-domain architecture descriptor).
+\item \code{NativeMaxPeakWidth}: max width of native peaks overlapping the
+domain (NA when \code{peak_path} missing).
+\item \code{NativeOccupiedWidth}: sum of reduced native peak widths
+inside the domain (NA when \code{peak_path} missing).
+\item \code{NativePeakCount}: number of native peaks overlapping the
+domain (NA when \code{peak_path} missing).
+}
+The static shared interval length is stored in \code{rowData(se)$IntervalWidth}.
+Imported native peaks (if provided) are stored in
+\code{metadata(se)$native_peaks} for downstream peak-level Breadth-Super
+calling.
 }
 \description{
-Extracts Width, Intensity, Height, and robust Skewness from BigWig files
-across consensus or stitched peaks. This function is the core engine of epiPortrait,
-generating a 4D feature representation (Portrait) for epigenetic domains.
+Extracts domain-level quantitative features from BigWig files
+across consensus or stitched peaks: \code{Intensity} (integrated signal
+magnitude) and \code{SignalDispersion} (signal-weighted genomic dispersion).
+When sample-specific native peak files (\code{peak_path}) are provided,
+additional sample-specific breadth geometry is added as
+\code{NativeMaxPeakWidth}, \code{NativeOccupiedWidth} and
+\code{NativePeakCount}. This is the core engine of epiPortrait.
+}
+\examples{
+if (.Platform$OS.type != "windows") {
+  extdata <- system.file("extdata", package = "epiPortrait")
+  samples <- data.frame(
+    SampleID  = c("C1", "C2", "T1", "T2"),
+    Condition = c("Control", "Control", "Treatment", "Treatment"),
+    bw_path   = file.path(extdata, c("C1.bw", "C2.bw", "T1.bw", "T2.bw")),
+    peak_path = file.path(extdata, c("C1_peaks.bed", "C2_peaks.bed",
+                                     "T1_peaks.bed", "T2_peaks.bed")))
+  peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
+  build_portrait_matrix(samples, consensus_peaks = peaks, workers = 1)
+}
 }

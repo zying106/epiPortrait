@@ -1,38 +1,183 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+# epiPortrait <img src="man/figures/logo.jpg" align="right" width="160" alt="epiPortrait Logo" />
 
-# epiPortrait <img src="man/figures/logo.png" align="right" width="160" alt="epiPortrait Logo" />
+**Replicate-Aware Epigenomic Domain Profiling and Remodeling**
 
-**4D Geometric Profiling of Epigenetic Landscapes — Beyond Intensity**
-
-[![R-CMD-check](https://img.shields.io/badge/R--CMD--check-passing-brightgreen.svg)](https://github.com/zhangying/epiPortrait)
+[![R-CMD-check](https://github.com/zhangying/epiPortrait/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zhangying/epiPortrait/actions/workflows/R-CMD-check.yaml)
+[![BiocCheck](https://github.com/zhangying/epiPortrait/actions/workflows/bioccheck.yaml/badge.svg)](https://github.com/zhangying/epiPortrait/actions/workflows/bioccheck.yaml)
+[![Codecov](https://img.shields.io/codecov/c/github/zhangying/epiPortrait)](https://app.codecov.io/gh/zhangying/epiPortrait)
 [![License: GPL (\>=
 3)](https://img.shields.io/badge/License-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Bioconductor
-Ready](https://img.shields.io/badge/Bioconductor-ready-brightgreen?logo=bioconductor)](https://www.bioconductor.org)
 [![Lifecycle:
-stable](https://img.shields.io/badge/Lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html)
+experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html)
+
+------------------------------------------------------------------------
+
+**epiPortrait asks not only whether an epigenomic domain changes, but how it changes.**
+
+Conventional epigenomic workflows are highly effective at identifying peaks and
+differential enrichment, but a regulatory domain can remodel through distinct
+quantitative modes: its signal can become stronger, its native enriched
+territory can become broader, or both can occur together.
+
+epiPortrait provides a replicate-aware framework that separates **integrated
+signal magnitude (Intensity)** from **replicate-specific native peak breadth**,
+and follows how these domain states remodel across biological conditions.
 
 ------------------------------------------------------------------------
 
 ## Why epiPortrait?
 
-Traditional ChIP-seq / ATAC-seq / CUT&Tag analyses treat genomic regions
-as one-dimensional features, focusing almost exclusively on signal
-**Intensity** (read counts). However, the physical conformation of
-chromatin domains carries additional biological meaning that raw counts
-cannot capture:
+Many epigenomic analyses collapse a region into one principal quantity:
+*how much signal is present?* But biologically distinct domains can carry
+similar integrated signal:
 
-- **Width** — lateral spreading of the mark (super-enhancers,
-  heterochromatin expansion)
-- **Height** — local recruitment density at the summit (focal complex
-  assembly)
-- **Skewness** — asymmetric signal distribution within the domain
-  (directional spreading, transcription-coupled remodeling)
+```text
+Domain A: high, focal signal
+Domain B: moderate signal spread across a broad enriched territory
+```
 
-`epiPortrait` builds a **4D geometric portrait matrix** from BigWig
-coverage profiles and applies **MANOVA** to detect **Shape Shift**
-events — regulatory regions where the physical conformation of the
-epigenome changes significantly between conditions, even when total read
-counts do not.
+Likewise, two equally broad domains can differ strongly in total activity.
+When a region is summarized by a single ranking statistic, these distinct
+regulatory states are conflated.
+
+epiPortrait therefore separates **signal magnitude** from **native breadth
+geometry**, and asks whether each state is reproducibly supported across
+biological replicates.
+
+**Methodological focus.** epiPortrait does not propose that domain breadth is
+itself a new biological concept — broad H3K4me3 promoter domains and
+super-enhancer width have an established literature. Its contribution is to
+place conventional native-domain breadth and continuous signal magnitude into
+a **unified replicate-aware framework**, preserve their distinct evidence
+sources, and convert them into interpretable condition-specific domain
+phenotypes and remodeling states.
+
+## What does epiPortrait add?
+
+### 1. Two separable canonical phenotype axes
+
+`Intensity` and native `Breadth` are treated as independent quantitative
+properties, not merged into one rank.
+
+| Axis | Measures | Canonical class |
+|:-----|:---------|:----------------|
+| **Intensity** | Integrated normalized signal across the shared domain | `Intensity-Super` |
+| **Native breadth** | Width of each replicate's native peak/domain call | `Breadth-Super` |
+| **SignalDispersion** | Signal-weighted genomic SD within the domain (secondary architecture descriptor) | — |
+
+### 2. Replicate-aware evidence
+
+Each biological replicate is called independently; replicate calls are
+aggregated with an explicit support rule before a group phenotype is assigned.
+`Uncertain` is assigned when evidence is insufficient — it is an abstention,
+never a silent relabel.
+
+### 3. Condition remodeling
+
+Domains transition between states across conditions
+(`Typical ↔ Intensity-Super ↔ Breadth-Super ↔ Dual-Super`), and continuous
+width expansion / contraction is tracked separately.
+
+### 4. Mark-aware interpretation
+
+The same quantitative engine serves active enhancer domains (H3K27ac), broad
+promoter domains (H3K4me3), and broad repressive chromatin
+(H3K27me3 / H3K9me3), with biological terminology adapted per mark.
+
+> **The quantitative framework is mark-independent, while biological
+> interpretation is mark-aware.**
+
+## How do domains combine the two axes?
+
+Each domain is classified independently on the two axes; their combination
+gives the four architecture states:
+
+```text
+                       BREADTH-SUPER (broad native geometry)
+                              │
+      Breadth-Super           │          Dual-Super
+      (broad, not            │          (broad and
+       signal-extreme)       │           signal-extreme)
+──────────────────────────────┼──────────────────────────────  INTENSITY-SUPER
+      Typical                 │          Intensity-Super
+      (neither)               │          (signal-extreme,
+                              │           not necessarily broad)
+                              │
+```
+
+- `Intensity-Super` = extreme integrated signal, without necessarily broad native geometry.
+- `Breadth-Super` = unusually broad native enrichment, without necessarily extreme signal.
+- `Dual-Super` = both high magnitude and broad geometry.
+
+`Uncertain` is reported when the evidence in a condition is not reliable
+(e.g. no native peaks, or an unstable width inflection).
+
+## What biological questions can epiPortrait address?
+
+| Question | epiPortrait output |
+|:---------|:-------------------|
+| Which domains carry extreme integrated signal? | `Intensity-Super` |
+| Which domains are unusually broad in native peak geometry? | `Breadth-Super` |
+| Which are both strong and broad? | `Dual-Super` |
+| Is the call reproducible across replicates? | replicate support / `Uncertain` |
+| How does a domain change between conditions? | class transition |
+| Is a domain expanding or contracting? | width transition |
+| How is signal spatially organized inside the domain? | `SignalDispersion` |
+| Which genes are spatially associated with the domain? | annotation / candidate links |
+
+**Representative applications.** Broad-promoter remodeling (H3K4me3:
+intensity gain vs breadth expansion vs coupled change; normal → cancer,
+differentiation, drug perturbation). Active enhancer / super-enhancer
+architecture (H3K27ac: intensity-dominant vs breadth-dominant vs dual-extreme;
+oncogenic enhancer acquisition, drug response, lineage switching). Repressive
+domain remodeling (H3K27me3 / H3K9me3: expansion/contraction, with
+mark-appropriate surface labels). Perturbation and therapy resistance
+(Control → drug, Sensitive → Resistant, WT → KO), where epiPortrait describes
+*how* the state organization changes rather than only a signal log-fold-change.
+
+**Cohort-style studies.** When a condition comprises independent patients
+(e.g. three tumors of the same subtype), the support machinery summarizes
+**cross-patient recurrence**: the same support rules report how consistently a
+domain phenotype is shared across patients. These are **not** experimental
+replicates of a single sample — interpret them as population-level recurrence,
+and use a permissive support rule (e.g. `"all"` with a single patient per
+condition, or `min_replicate_support` tuned to the intended recurrence
+threshold).
+
+## Relationship to existing methods
+
+| Tool / family | Primary question | Where epiPortrait differs |
+|:--------------|:-----------------|:--------------------------|
+| MACS2 / SICER / epic2 | Where are enriched peaks/domains? | epiPortrait starts after domain calling |
+| DiffBind / csaw | Where does enrichment differ statistically? | epiPortrait describes domain phenotype and remodeling mode |
+| ROSE | Which stitched enhancers are signal-extreme? | epiPortrait separates Intensity from native Breadth and adds replicate support |
+| ChIPseeker | Where is a peak relative to genes/features? | epiPortrait uses annotation after quantitative phenotyping |
+| deepTools | How do signal tracks look across regions/samples? | epiPortrait converts track measurements into domain-level phenotypes |
+
+These tools address different analytical targets; epiPortrait is a downstream
+phenotype layer, not a replacement for peak calling or differential-enrichment
+testing.
+
+## Scope and limitations
+
+epiPortrait is **not** designed to:
+
+- align FASTQ/BAM or call peaks from reads;
+- replace DiffBind / csaw differential testing;
+- infer causal enhancer–gene regulation;
+- call chromatin loops;
+- perform RNA-seq differential expression.
+
+For quantitative claims, the input BigWigs must be comparable (CPM / RPGC /
+spike-in normalization). Native breadth calls depend on the upstream peak /
+domain caller and boundary quality. `SignalDispersion` describes spatial
+signal organization, not physical chromatin conformation. Annotated
+nearest/overlapping genes are candidates, not causal targets.
 
 ------------------------------------------------------------------------
 
@@ -41,21 +186,18 @@ counts do not.
 ``` r
 if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 BiocManager::install(c(
-  "GenomicRanges", "SummarizedExperiment", "ChIPseeker",
-  "GenomicFeatures", "limma", "clusterProfiler",
+  "GenomicRanges", "SummarizedExperiment", "GenomicFeatures",
   "org.Hs.eg.db", "org.Mm.eg.db"
 ))
 
-# Install epiPortrait from GitHub
 devtools::install_github("zhangying/epiPortrait", build_vignettes = TRUE)
 ```
 
 ------------------------------------------------------------------------
 
-## Core Module 1: Build the 4D Portrait Matrix
+## Core workflow
 
-The foundation of epiPortrait: extract geometric features from BigWig
-coverage at every consensus domain.
+### Module 1: Build the Portrait Matrix
 
 ``` r
 library(epiPortrait)
@@ -73,396 +215,202 @@ samples <- data.frame(
 # 3. Optionally stitch proximal peaks into macro-domains
 # macro_domains <- stitch_epi_peaks(consensus_peaks, stitch_distance = 12500)
 
-# 4. Build the 4D portrait matrix
+# 4. Build the portrait matrix (peak_path is optional, for Breadth-Super)
 se <- build_portrait_matrix(
   sample_sheet    = samples,
   consensus_peaks = consensus_peaks,
-  workers         = 4,
-  bg_quantile     = 0.1,
-  cache_dir       = "epiPortrait_cache"
+  workers         = 4
 )
 
-# 5. Normalize
-se <- normalize_portrait(se, method = "TotalSignal")
+# 5. Normalization is OFF by default: input BigWigs should already be
+# quantitatively comparable (CPM/RPGC/spike-in). See vignette for options.
+se <- normalize_portrait(se, method = "None")
 ```
 
 **Key Parameters:**
 
-- **`workers`**: Number of parallel threads via `BiocParallel`. Use
-  `workers = 1` on Windows.
-- **`bg_quantile`**: Signals below this quantile within each peak are
-  excluded from skewness estimation (Valley Trap — removes background
-  noise).
-- **`on_disk`**: When `TRUE`, stores assays as HDF5 files via
-  `HDF5Array`. Recommended for mammalian-scale (\> 100K peaks)
-  processing.
-- **`cache_dir`**: Directory to cache per-sample BigWig coverage views
-  as RDS files. Subsequent runs skip BigWig I/O entirely when the
-  BigWig + peaks combination is unchanged.
-- **`custom_features`**: Named list of functions; each receives coverage
-  views for one peak and returns a numeric value, enabling user-defined
-  geometric dimensions.
+- **`workers`**: Parallel threads via `BiocParallel`.
+- **`on_disk`**: Store assays as HDF5 for mammalian-scale processing.
+- **`cache_dir`**: Cache per-sample coverage views as RDS to skip BigWig I/O.
+- **`custom_features`**: Named list of functions for user-defined dimensions.
+- **`negative_policy`**: `"error"` (default), `"clip_zero"`, or `"allow"` for
+  negative signal handling.
 
-**Output Data Dictionary — SummarizedExperiment:**
+**Output assays (dynamic, per-sample):**
 
-| Assay | Description | Dimensions |
-|:---|:---|:---|
-| `Width` | Physical span of the domain (bp); identical across all samples | N peaks × S samples |
-| `Intensity` | Total signal abundance (area under BigWig curve) | N × S |
-| `Height` | Maximum signal density at the summit | N × S |
-| `Skewness` | Background-gated robust skewness of the signal distribution | N × S |
-
-------------------------------------------------------------------------
-
-## Core Module 2: Shape Shift Detection
-
-### 2a. Global Multivariate Test (MANOVA)
-
-`test_global_shape_shift()` simultaneously evaluates all four geometric
-dimensions to detect **Shape Shift** events — regions where the joint
-conformation differs between conditions.
-
-``` r
-# Simple two-group comparison
-shift_res <- test_global_shape_shift(
-  se,
-  group_var = "Condition",
-  test      = "Pillai",
-  workers   = 4
-)
-
-# Complex multi-factor design
-shift_res <- test_global_shape_shift(
-  se,
-  formula = ~ genotype * treatment + batch,
-  term    = "genotype:treatment"
-)
-```
-
-**Key Parameters:**
-
-- **`formula`**: Any model formula referencing `colData(se)` columns.
-  When `NULL`, falls back to `group_var` + optional `block_var`.
-- **`test`**: MANOVA test statistic. `"Pillai"` (default) is most robust
-  to unequal covariance matrices. Also `"Wilks"`, `"Hotelling-Lawley"`,
-  or `"Roy"`.
-- **`term`**: Which model term to report as the effect of interest.
-  Default auto-selects the last term.
-- **`block_var`**: Optional blocking variable for paired or batch
-  designs.
-
-**Output Data Dictionary — test_global_shape_shift():**
-
-| Column | Description |
+| Assay | Description |
 |:---|:---|
-| `seqnames`, `start`, `end` | Genomic coordinates of the domain |
-| `Peak_ID` | Unique peak identifier (matches `rownames(se)`) |
-| `Shape_Shift_Score` | Pillai trace value (0–1); larger = stronger multivariate shift |
-| `partial_eta_sq` | Partial eta-squared (0–1); proportion of multivariate variance explained by group |
-| `P.Value` | Raw P-value from MANOVA |
-| `adj.P.Val` | Benjamini-Hochberg adjusted P-value |
-| `Status` | Computation status: `"OK"`, `"Low_Variance"`, or `"MANOVA_Error"` |
+| `Intensity` | Total signal abundance (area under BigWig curve) |
+| `SignalDispersion` | Signal-weighted genomic SD within the domain (architecture descriptor) |
+| `NativeMaxPeakWidth` | Max native peak width mapped to the domain (needs `peak_path`) |
+| `NativeOccupiedWidth` | Sum of reduced native peak widths inside the domain (needs `peak_path`) |
+| `NativePeakCount` | Number of native peaks overlapping the domain (needs `peak_path`) |
 
-### 2b. Per-Dimension Differential Testing
+The static genomic interval length is stored in `rowData(se)$IntervalWidth`.
+Per-sample native peak files (via the optional `peak_path` column) enable
+Breadth-Super calling; they are stored in `metadata(se)$native_peaks`.
+
+### Candidate domain universe for multi-condition studies
+
+For multi-condition analyses (e.g. Control vs Treatment), build the candidate
+universe as the **union of per-condition replicate consensuses** so
+condition-specific domains are retained for transition / gain-loss analysis,
+then optionally stitch:
 
 ``` r
-# limma-based differential Intensity (recommended for small n)
-diff_res <- test_differential_feature(
-  se,
-  feature      = "Intensity",
-  group_var    = "Condition",
-  target_group = "Treatment",
-  ref_group    = "Control",
-  method       = "limma",
-  block_var    = "Patient"   # optional
-)
+preset <- get_mark_preset("H3K27ac")   # mark-aware defaults, e.g. stitch_distance
 
-# Test Height, Width, or Skewness similarly
-diff_height <- test_differential_feature(se, feature = "Height", ...)
-diff_width  <- test_differential_feature(se, feature = "Width",  ...)
+ctrl_consensus <- get_consensus_peaks(ctrl_peak_list, min_reps = 2)
+treat_consensus <- get_consensus_peaks(treat_peak_list, min_reps = 2)
+candidate_domains <- GenomicRanges::reduce(c(ctrl_consensus, treat_consensus))
+
+if (preset$stitch_distance > 0) {
+  candidate_domains <- stitch_epi_peaks(candidate_domains,
+                                        stitch_distance = preset$stitch_distance)
+}
 ```
+
+A single global `min_reps = 2` across all samples would let rare
+condition-specific loci fall below the replicate threshold; the
+per-condition-then-union pattern keeps them.
+
+### Module 2: Super-Domain Calling
+
+The canonical workflow for condition comparison is per-group, replicate-aware
+calling (each replicate called independently, then aggregated per condition):
+
+``` r
+se <- call_super_domains(
+    se,
+    feature = "Intensity",
+    mode = "per_group",
+    group_var = "Condition"
+)
+table(rowData(se)$Intensity_Domain_Type)
+```
+
+For a single-condition study (no `Condition` grouping), the default
+`mode = "global_consensus"` aggregates all replicates into one call.
 
 **Key Parameters:**
 
-- **`feature`**: Any assay in the SE (`"Intensity"`, `"Height"`,
-  `"Width"`, `"Skewness"`, or custom feature name).
-- **`method`**: `"limma"` (recommended, uses empirical Bayes
-  moderation), `"t.test"`, or `"wilcox"`.
-- **`block_var`**: Enables paired testing for t.test / Wilcoxon, or
-  covariate adjustment for limma.
+- **`feature`**: canonical Super axes — `"Intensity"` → Super-Element,
+  `"Breadth"` → peak-level Breadth-Super. Secondary/exploratory (not canonical
+  Super axes): `"SignalDispersion"` (within-domain architecture descriptor),
+  `"IntervalWidth"` (static shared coordinate frame).
+- **`method`**: `"elbow"` (default, max perpendicular distance) or `"tangent"`
+  (ROSE-inspired tangent-optimization inflection; Whyte et al., 2013 *Cell*).
+  Note that the tangent implementation is a geometric variant, not a bit-exact
+  reproduction of ROSE's `calculate_cutoff()`.
+- **`log_transform`**: `NULL` (auto per-feature, default), `TRUE`, or `FALSE`
+  (rank on the raw feature scale).
+- **`mode`**: `"global_consensus"` (default; alias `"consensus"`),
+  `"per_group"`, or `"per_sample"`. In `"per_group"` (recommended for
+  multi-condition studies) each replicate is called independently on its own
+  ranked feature distribution, then replicate calls are aggregated within each
+  condition using the selected support rule; group-mean ranks are stored for
+  visualization only and never determine the group call.
+- **`n_bootstrap`**: Cutoff stability interval + success rate (Intensity:
+  candidate domains; Breadth: per-replicate native PeakWidth distribution).
+  A resampling-stability diagnostic, not a classical CI.
+- **Breadth only**: `min_peak_overlap_fraction` (default `0.5`, unique
+  peak-to-domain mapping) and `valid_chroms` (allowed chromosomes).
 
-------------------------------------------------------------------------
+**Optional H3K27ac benchmark against ROSE.** For a head-to-head comparison
+with the ROSE super-enhancer pipeline (Whyte et al., 2013), use
+`method = "tangent"` with `log_transform = FALSE` (raw signal, ROSE-style
+scale). This is an optional benchmark setting, not the package's primary
+workflow; the core value of epiPortrait is the Intensity × native-Breadth
+decomposition with replicate support, not ROSE reproduction.
 
-## Core Module 3: Shape Shift Classification
+**Breadth-Super is a peak-level call.** Each replicate's genome-wide eligible
+native PeakWidth distribution is cut by an elbow/inflection; broad peaks are
+mapped to the shared domains by unique assignment and aggregated across
+replicates. It is decoupled from consensus construction.
 
-`classify_shape_shift()` translates abstract Pillai scores into six
-biologically interpretable categories.
+### Combined taxonomy
+
+For multi-condition studies (the main biological use case), use the
+`per_group` mode so each replicate is called independently and replicate calls
+are aggregated within each condition:
 
 ``` r
-shift_res <- classify_shape_shift(
-  se, shift_res,
-  group_var    = "Condition",
-  target_group = "Treatment",
-  ref_group    = "Control",
-  fc_threshold     = 0.5,    # log2 fold-change
-  skewness_threshold = 0.3   # absolute delta
-)
-
-table(shift_res$Shape_Class)
+se <- call_super_domains(se, feature = "Intensity",
+                         mode = "per_group", group_var = "Condition")
+se <- call_super_domains(se, feature = "Breadth",
+                         mode = "per_group", group_var = "Condition")
+se <- combine_superdomain_calls(se, group_var = "Condition")
+table(rowData(se)$Combined_Class__Control)  # Intensity-Super / Breadth-Super / Dual-Super / Typical / Uncertain
 ```
 
-| Class | Pattern | Biological Interpretation |
-|:---|:---|:---|
-| **Concentration** | Height ↑, Intensity stable | Signal concentrates at summit — tighter regulatory focus |
-| **Flattening** | Height ↓, Intensity stable | Signal spreads across domain — regulatory broadening |
-| **Polarity Shift** | Skewness dominates | Asymmetric redistribution — directional spreading or collapse |
-| **Global Gain** | Intensity ↑, Height concordant | Coordinated increase — activation or chromatin opening |
-| **Global Loss** | Intensity ↓, Height concordant | Coordinated decrease — repression or closing |
-| **Complex** | ≥ 2 dimensions discordant | Multi-dimensional structural remodelling |
-
-<div align="center">
-
-<img src="man/figures/plot1.jpg" alt="Classification overview" width="80%" style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;">
-<p>
-
-<em>Figure 1: Six epiPortrait shape shift classes illustrated on
-schematic coverage profiles.</em>
-</p>
-
-</div>
-
-------------------------------------------------------------------------
-
-## Core Module 4: Outlier Detection & QC
-
-### 4a. 4D Conformational Outlier Detection
+### Module 3: Condition Transitions
 
 ``` r
-# Find domains with intrinsically unusual 4D geometry
-outliers <- detect_conformational_outliers(
-  se,
-  method      = "robust",    # MCD robust covariance
-  ref_samples = NULL         # NULL = all samples
-)
-
-# Single-sample analysis: normal cohort as reference
-outliers <- detect_conformational_outliers(
-  se,
-  method      = "robust",
-  ref_samples = c("Normal_1", "Normal_2", "Normal_3")
-)
-
-head(outliers[, c("Peak_ID", "Mahalanobis_D2", "adj.P.Val", "Outlier_Flag")])
+se <- call_super_domains(se, feature = "Intensity",
+                         mode = "per_group", group_var = "Condition")
+se <- compare_superdomains(se, group_var = "Condition",
+                           ref_group = "Control", target_group = "Treatment")
+table(rowData(se)$Intensity_Relative_Transition)
 ```
 
-**Key Parameters:**
+The default `cutoff_scope = "relative"` calls each group with its own cutoff;
+the output classes `Relative_Prominence_Up` / `Relative_Prominence_Down`
+express a *relative rank-state* change and must **not** be interpreted as
+absolute signal gain/loss. Use `cutoff_scope = "reference"` or `"pooled"` for
+a common-threshold `Gain` / `Loss` interpretation (only valid when the BigWigs
+are quantitatively comparable). `Uncertain` is assigned when a group call was
+not reliable.
 
-- **`method`**: `"robust"` (MCD, default) for outlier-resistant
-  covariance estimation; `"classic"` for standard MLE.
-- **`ref_samples`**: Character vector of sample names defining the
-  reference distribution. When `NULL`, all samples form the reference.
-  Useful for query-vs-reference (e.g., tumor vs normal panel).
-- **`collapse_fun`**: Function collapsing per-sample values to a single
-  value per domain. Default `rowMeans(na.rm = TRUE)`.
-
-**Output Data Dictionary — detect_conformational_outliers():**
-
-| Column | Description |
-|:---|:---|
-| `seqnames`, `start`, `end` | Genomic coordinates |
-| `Peak_ID` | Domain identifier |
-| `Mahalanobis_D2` | Squared Mahalanobis distance to the reference centroid |
-| `P.Value` | χ²(4) P-value |
-| `adj.P.Val` | BH-adjusted P-value |
-| `Outlier_Flag` | Logical; `TRUE` if `adj.P.Val < 0.05` |
-
-### 4b. Manhattan Plot of Conformational Outliers
+### Module 4: Annotation & Visualization
 
 ``` r
-plot_outlier_manhattan(
-  outliers,
-  y_axis    = "logP",      # or "D2" for raw Mahalanobis distance
-  label_n   = 10,          # label top 10 outliers
-  label_col = "SYMBOL"     # use gene names if available
-)
-```
+# Domain-aware annotation (nearest TSS / promoter / gene-body / contained)
+se <- annotate_epi_domains(se, genome = "hg38")
+candidates <- get_domain_genes(se, group = "Control")
 
-### 4c. Standard QC Visualizations
+# Hockey-stick ranking plot
+se <- call_super_domains(se, feature = "Intensity")
+plot_hockey_stick(se, feature = "Intensity")
 
-``` r
-# PCA on any geometric dimension
-plot_portrait_pca(se, feature = "Intensity", group_var = "Condition", n_top = 1000)
+# Single-domain feature profile (raw values across conditions)
+plot_domain_feature_profile(se, peak_id = rownames(se)[1], group_var = "Condition")
 
-# Sample correlation heatmap
+# QC
+plot_portrait_pca(se, feature = "Intensity", group_var = "Condition")
 plot_portrait_correlation(se, feature = "Intensity")
 ```
 
 ------------------------------------------------------------------------
 
-## Core Module 5: Publication-Ready Visualizations
-
-### 4D Volcano Plot
-
-X-axis: Intensity log2 fold-change \| Y-axis: -log10(adj.P.Val) \| Point
-size: domain width \| Point color: skewness shift.
+## Quick Start with Example Data
 
 ``` r
-plot_portrait_volcano(
-  diff_res, se,
-  target_group = "Treatment",
-  ref_group    = "Control",
-  p_cutoff     = 0.05,
-  fc_cutoff    = 1
-)
+library(epiPortrait)
+data(example_se)
+
+se <- normalize_portrait(example_se, method = "None")
+se <- call_super_domains(se, feature = "Intensity",
+                         mode = "per_group", group_var = "Condition",
+                         verbose = FALSE)
+se <- call_super_domains(se, feature = "Breadth",
+                         mode = "per_group", group_var = "Condition",
+                         verbose = FALSE)
+se <- combine_superdomain_calls(se, group_var = "Condition")
+table(rowData(se)$Combined_Class__Control)
 ```
 
-### Radar Chart: Single-Peak 4D Conformation
+For an optional H3K27ac / ROSE-style benchmark, use
+`method = "tangent", log_transform = FALSE` (see the parameter notes above);
+the default `elbow` method is the main analysis.
 
-``` r
-top_peak <- shift_res$Peak_ID[shift_res$adj.P.Val < 0.05][1]
-plot_peak_portrait(se, peak_id = top_peak, group_var = "Condition")
-```
-
-### Group Overlay Tracks (Shape Shift Validation)
-
-The most intuitive validation: overlay group-mean coverage profiles with
-± SEM ribbons on the same panel.
-
-``` r
-plot_shift_comparison(
-  se, peak_id = top_peak,
-  group_var = "Condition",
-  group1    = "Control",
-  group2    = "Treatment",
-  extend_bp = 1000
-)
-```
-
-### Hockey Stick (ROSE-Style Super-Domain Identification)
-
-``` r
-se <- call_super_domains(se, feature = "Intensity")
-plot_hockey_stick(se, feature = "Intensity", top_n_label = 10)
-```
-
-**Key Parameters for `call_super_domains()`:**
-
-- **`feature`**: `"Intensity"` → Super-Element, `"Width"` →
-  Broad-Domain, `"Height"` → Steep-Peak.
-- **`sample_id`**: Which sample to use for ranking. Default `"Mean"`
-  uses row means.
-
-------------------------------------------------------------------------
-
-## Core Module 6: Temporal & Dose-Response Shape Drift
-
-``` r
-# Timepoints must be numeric and ordered
-se$Timepoint <- c(0, 0, 2, 2, 6, 6, 24, 24)  # example
-
-temporal_res <- test_temporal_shape_shift(
-  se,
-  time_var   = "Timepoint",
-  block_var  = "Patient",    # optional
-  poly_order = 2,            # linear + quadratic trends
-  workers    = 4
-)
-
-head(temporal_res[, c("Peak_ID", "Linear_Pval", "Quadratic_Pval", "adj.P.Val")])
-```
-
-**Key Parameters:**
-
-- **`poly_order`**: Maximum polynomial order. 2 = linear + quadratic; 3
-  = also tests cubic trends. Each order consumes 1 degree of freedom.
-- **`time_var`**: Must be numeric or convertible to numeric with ≥ 3
-  distinct values.
-
-------------------------------------------------------------------------
-
-## Core Module 7: Power Analysis & Experimental Design
-
-Before running your experiment: how many biological replicates do you
-need to detect a shape shift of a given magnitude?
-
-``` r
-power_df <- simulate_power(
-  n_range    = 3:10,
-  eta2_range = c(0.06, 0.14, 0.30, 0.50),   # medium, large, very large
-  n_dims     = 2,     # how many dimensions carry the true effect
-  n_sim      = 200,
-  workers    = 4
-)
-
-plot_power_curve(power_df)
-```
-
-**Key Parameters:**
-
-- **`eta2_range`**: Partial eta-squared benchmarks: 0.01 = small, 0.06 =
-  medium, 0.14 = large (multivariate context).
-- **`n_dims`**: Number of dimensions (1–4) where the true effect is
-  embedded.
-
-------------------------------------------------------------------------
-
-## Core Module 8: Annotation, Enrichment & Export
-
-``` r
-# Genomic annotation via ChIPseeker
-anno_df <- annotate_epi_peaks(
-  shift_res[shift_res$adj.P.Val < 0.05, ],
-  genome = "hg38",          # also "hg19", "mm10", or "custom"
-  tss_region = c(-3000, 3000)
-)
-
-# GO + KEGG enrichment per shape class
-enrich_res <- enrich_shape_shifted(shift_res, organism = "human")
-
-# Biological narrative synthesis
-narrative <- summarize_findings(shift_res, se,
-  enrichment_res = enrich_res,
-  fdr_cutoff     = 0.05
-)
-cat(narrative$full_text)
-
-# Export: BED file for IGV / HOMER
-export_shifted_bed(shift_res, "shape_shifted_regions.bed", fdr_cutoff = 0.05)
-
-# Export: IGV session (double-click to open)
-export_igv_session(shift_res, se, genome = "hg38", session_file = "epiPortrait_session.xml")
-```
-
-------------------------------------------------------------------------
-
-## One-Click Parameterised Report
-
-Generate a complete HTML report in a single call. Modules auto-hide when
-their parameters are left at `NULL`.
-
-``` r
-render_report(
-  sample_sheet       = samples,
-  consensus_peaks    = consensus_peaks,
-  genome             = "hg38",
-  target_group       = "Treatment",
-  ref_group          = "Control",
-  super_domain_feature = "Intensity",
-  output_file        = "epiPortrait_analysis.html"
-)
-```
-
-You can also create an R Markdown document from the built-in template:
-*File \> New File \> R Markdown… \> From Template \> epiPortrait
-Report*.
+See the [vignette](vignettes/epiPortrait.Rmd) for the full workflow.
 
 ------------------------------------------------------------------------
 
 ## Contact
 
 **Ying ZHANG**\
-Zhejiang University\
-<zhangying@example.com>
+Zhejiang University
 
 Issues and feature requests:
 <https://github.com/zhangying/epiPortrait/issues>
@@ -471,16 +419,20 @@ Issues and feature requests:
 
 ## Citation
 
-> ZHANG Y. (2025). *epiPortrait: Multi-Dimensional Geometric Profiling
-> of Epigenetic Landscapes*. R package version 0.1.0.
+> ZHANG Y. (2026). *epiPortrait: Replicate-Aware Epigenomic Domain Profiling*.
+> R package version 0.99.0.
 > <https://github.com/zhangying/epiPortrait>
 
+The canonical citation is stored in `inst/CITATION` and can be retrieved
+programmatically at any time with `citation("epiPortrait")`; the BibTeX entry
+above mirrors it.
+
 ``` bibtex
-@manual{epiPortrait,
-  title  = {epiPortrait: Multi-Dimensional Geometric Profiling of Epigenetic Landscapes},
-  author = {Ying Zhang},
-  year   = {2025},
-  note   = {R package version 0.1.0},
+@Manual{epiPortrait,
+  title  = {epiPortrait: Replicate-Aware Epigenomic Domain Profiling},
+  author = {Ying ZHANG},
+  year   = {2026},
+  note   = {R package version 0.99.0},
   url    = {https://github.com/zhangying/epiPortrait}
 }
 ```
