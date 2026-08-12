@@ -35,10 +35,8 @@ jobs:
           use-public-rspm: true
 
       # epiPortrait depends on Bioconductor packages (GenomicRanges,
-      # SummarizedExperiment, ...): register the Bioconductor repositories
-      # before resolving dependencies.
-      - uses: r-lib/actions/setup-bioc@v2
-
+      # SummarizedExperiment, ...); setup-r-dependencies resolves the
+      # Bioconductor repositories automatically from DESCRIPTION.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |
