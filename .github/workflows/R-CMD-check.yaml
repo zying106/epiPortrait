@@ -47,10 +47,12 @@ jobs:
             any::txdbmaker
             any::edgeR
             any::org.Hs.eg.db
+            any::BiocStyle
+            any::rmarkdown
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2
         with:
           upload-snapshots: true
-          error-on: warning
-          args: 'c("--no-manual")'
+          error-on: '"warning"'
+          args: 'c("--no-manual", "--as-cran")'
