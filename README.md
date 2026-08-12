@@ -1,8 +1,3 @@
----
-output:
-  pdf_document: default
-  html_document: default
----
 # epiPortrait <img src="man/figures/logo.jpg" align="right" width="160" alt="epiPortrait Logo" />
 
 **Replicate-Aware Epigenomic Domain Profiling and Remodeling**
