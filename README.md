@@ -194,6 +194,38 @@ devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 
 ### Module 1: Build the Portrait Matrix
 
+**Required inputs.**
+
+| Input | Needed for | How to obtain |
+|:------|:-----------|:--------------|
+| `bw_path` (BigWig) | Intensity, SignalDispersion, all signal assays | Normalized, comparable tracks (CPM/RPGC/spike-in) |
+| `consensus_peaks` (GRanges) | **the shared candidate-domain universe** — Intensity-Super is computed *on these intervals* | From per-sample peak files via `get_consensus_peaks()`, or any user-defined domain set |
+
+The **candidate-domain universe is always required** — without it there are no
+intervals on which to integrate signal. In practice it is derived from peak
+calls (like ROSE), but it can also be any user-supplied `GRanges` (e.g. from a
+database, a fixed tiling, or externally defined domains).
+
+`peak_path` (per-sample native peak files) is **optional** and needed **only**
+for the peak-level `Breadth` axis. If you analyze Intensity only, you do not
+need per-sample peak files — but you still need the candidate-domain universe.
+
+**Single-sample, Intensity-only.** A single `bw_path` + a candidate-domain
+`GRanges` is sufficient:
+
+``` r
+samples1 <- data.frame(
+  SampleID  = "S1",
+  Condition = "Control",
+  bw_path   = "sample1.bw"
+)
+se1 <- build_portrait_matrix(samples1, consensus_peaks = my_domains)
+se1 <- call_super_domains(se1, feature = "Intensity", mode = "per_sample")
+```
+
+With one sample there is no replicate support, so `Intensity-Super` reflects a
+single-sample rank state (use `mode = "per_sample"`).
+
 ``` r
 library(epiPortrait)
 
