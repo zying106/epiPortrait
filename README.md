@@ -199,28 +199,31 @@ devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 | Input | Needed for | How to obtain |
 |:------|:-----------|:--------------|
 | `bw_path` (BigWig) | Intensity, SignalDispersion, all signal assays | Normalized, comparable tracks (CPM/RPGC/spike-in) |
-| `consensus_peaks` (GRanges) | **the shared candidate-domain universe** — Intensity-Super is computed *on these intervals* | From per-sample peak files (bed / narrowPeak / broadPeak) via `rtracklayer::import()` + `get_consensus_peaks()` |
+| `consensus_peaks` (GRanges) | **the shared candidate-domain universe** — Intensity-Super is computed *on these intervals* | From peak-caller bed/narrowPeak via `rtracklayer::import()` + `get_consensus_peaks()` |
 
-**The candidate-domain universe always comes from peak-caller output.** In
-practice, `consensus_peaks` is a `GRanges` read from the bed/narrowPeak files
-that your peak caller (MACS2, SICER, epic2, ...) produced — the same upstream
-input ROSE consumes. Without peak calls you have no candidate domains, and
-without candidate domains there are no intervals on which to integrate signal.
-The only exception is when you bring an externally defined domain set (a fixed
-tiling, a database interval table, or domains from a published analysis) and
-import it as a `GRanges`.
+**Two different "peak files" are involved — do not confuse them.**
 
-`peak_path` (per-sample native peak files) is **optional** and needed **only**
-for the peak-level `Breadth` axis. If you analyze Intensity only, you do not
-need per-sample native peak files — but you still need the candidate-domain
-universe derived from your peak-caller bed files.
+1. **Candidate-domain universe** (`consensus_peaks`, one shared set for all
+   samples): defines *which regions you analyze*. It is derived from your peak
+   caller's output (MACS2, SICER, epic2, ... bed/narrowPeak), the same upstream
+   input ROSE consumes. **Every analysis needs this** — including
+   Intensity-only — because without it there are no intervals to integrate
+   signal over. Exception: you may import an externally defined domain set (a
+   fixed tiling, a database interval table, or published domains) instead.
 
-**Single-sample, Intensity-only.** A single `bw_path` + a candidate-domain
-`GRanges` (read from that sample's narrowPeak/bed, or any external domain set)
-is sufficient:
+2. **Per-sample native peaks** (`peak_path`, one file per sample): each
+   sample's *own* peak calls, used to measure how wide the native enrichment is
+   per sample. **Only the `Breadth` axis needs this.** Intensity-only analyses
+   omit it.
+
+So: *all* analyses need the candidate universe (a peak-derived GRanges);
+only *Breadth* analyses additionally need per-sample native peak files.
+
+**Single-sample, Intensity-only.** One `bw_path` + one candidate-domain
+`GRanges` (read from that sample's narrowPeak/bed, or any external domain set):
 
 ``` r
-my_domains <- rtracklayer::import("sample1_narrowPeak.bed")  # or any GRanges
+my_domains <- rtracklayer::import("sample1_narrowPeak.bed")  # candidate universe
 
 samples1 <- data.frame(
   SampleID  = "S1",

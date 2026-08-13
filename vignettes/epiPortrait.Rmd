@@ -159,22 +159,27 @@ statistically meaningful ranked distribution (freeze review 2026-08-11).
 
 ## 1.1 The candidate-domain universe is required
 
-The **shared candidate-domain universe** is always required: it defines the
-intervals on which Intensity is integrated and across which all samples are
-compared. In practice it comes from your peak caller's output — the
-bed / narrowPeak / broadPeak files (MACS2, SICER, epic2, ...) are imported as
-`GRanges` and merged with `get_consensus_peaks()`, the same upstream input ROSE
-consumes. The only exception is when you bring an externally defined domain
-set (a fixed tiling, a database interval table, or published domains) and
-import it as a `GRanges`.
+Two different "peak files" are involved — do not confuse them.
 
-`peak_path` (per-sample native peak files) is a **separate, optional** input,
-used only for the peak-level `Breadth` axis. Intensity-only analyses do not
-need it, but they still need the candidate universe. A single-sample,
-Intensity-only run needs just `bw_path` + `consensus_peaks` (read from that
-sample's narrowPeak/bed, or any external domain set); with one sample, use
-`mode = "per_sample"` and interpret `Intensity-Super` as a single-sample rank
-state (no replicate support).
+1. **Candidate-domain universe** (`consensus_peaks`, one shared set for all
+   samples) defines *which regions you analyze*. It comes from your peak
+   caller's bed/narrowPeak output (MACS2, SICER, epic2, ...) via
+   `get_consensus_peaks()`, the same upstream input ROSE consumes. **Every
+   analysis needs this** — including Intensity-only — because without it there
+   are no intervals to integrate signal over. Exception: you may import an
+   externally defined domain set (fixed tiling, database interval table, or
+   published domains) as a `GRanges` instead.
+
+2. **Per-sample native peaks** (`peak_path`, one file per sample) are each
+   sample's *own* peak calls, used to measure native enrichment width per
+   sample. **Only the `Breadth` axis needs this**; Intensity-only analyses
+   omit it.
+
+So *all* analyses need the candidate universe (a peak-derived `GRanges`); only
+*Breadth* analyses additionally need per-sample native peak files. A
+single-sample, Intensity-only run needs just `bw_path` + `consensus_peaks`;
+with one sample, use `mode = "per_sample"` and interpret `Intensity-Super` as
+a single-sample rank state (no replicate support).
 
 ## 1.2 Consensus peaks from your peak-caller output
 
