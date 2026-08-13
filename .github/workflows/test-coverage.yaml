@@ -35,15 +35,16 @@ jobs:
             any::org.Hs.eg.db
           needs: check
 
-      - name: Coverage
+      - name: Test coverage
         run: |
-          token <- Sys.getenv("CODECOV_TOKEN")
-          if (nzchar(token)) {
-            covr::codecov(token = token, quiet = FALSE)
-          } else {
-            message("CODECOV_TOKEN not set; skipping upload (add it in ",
-                    "Settings -> Secrets to enable the coverage badge).")
-          }
+          covr::package_coverage(quiet = FALSE)
         shell: Rscript {0}
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      # Official Codecov action: for public repositories this uploads via the
+      # GitHub App integration without a token (add CODECOV_TOKEN only if the
+      # repo is private or the upload is rejected).
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: false
+          verbose: true

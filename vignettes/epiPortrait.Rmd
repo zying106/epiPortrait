@@ -114,7 +114,7 @@ BiocManager::install(c(
   "org.Hs.eg.db", "org.Mm.eg.db"
 ))
 
-devtools::install_github("zhangying/epiPortrait", build_vignettes = TRUE)
+devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 ```
 
 # Quick Start with Example Data

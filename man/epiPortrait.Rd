@@ -61,8 +61,8 @@ table(SummarizedExperiment::rowData(se)$Intensity_Domain_Type)
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/zhangying/epiPortrait}
-  \item Report bugs at \url{https://github.com/zhangying/epiPortrait/issues}
+  \item \url{https://github.com/zying106/epiPortrait}
+  \item Report bugs at \url{https://github.com/zying106/epiPortrait/issues}
 }
 
 }
