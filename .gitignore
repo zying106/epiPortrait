@@ -39,3 +39,7 @@ README.html
 README.tex
 Rplots.pdf
 validation/
+
+# Internal review / blueprint records (not part of the package)
+epiPortrait1[0-9]_*.md
+epiPortrait_*.md
