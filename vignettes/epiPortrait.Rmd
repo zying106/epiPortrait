@@ -161,16 +161,20 @@ statistically meaningful ranked distribution (freeze review 2026-08-11).
 
 The **shared candidate-domain universe** is always required: it defines the
 intervals on which Intensity is integrated and across which all samples are
-compared. It is normally built from per-sample peak calls (the same input ROSE
-uses), but any `GRanges` works — including a fixed tiling, externally defined
-domains, or a single user-supplied region set.
+compared. In practice it comes from your peak caller's output — the
+bed / narrowPeak / broadPeak files (MACS2, SICER, epic2, ...) are imported as
+`GRanges` and merged with `get_consensus_peaks()`, the same upstream input ROSE
+consumes. The only exception is when you bring an externally defined domain
+set (a fixed tiling, a database interval table, or published domains) and
+import it as a `GRanges`.
 
 `peak_path` (per-sample native peak files) is a **separate, optional** input,
 used only for the peak-level `Breadth` axis. Intensity-only analyses do not
 need it, but they still need the candidate universe. A single-sample,
-Intensity-only run needs just `bw_path` + `consensus_peaks`; with one sample,
-use `mode = "per_sample"` and interpret `Intensity-Super` as a single-sample
-rank state (no replicate support).
+Intensity-only run needs just `bw_path` + `consensus_peaks` (read from that
+sample's narrowPeak/bed, or any external domain set); with one sample, use
+`mode = "per_sample"` and interpret `Intensity-Super` as a single-sample rank
+state (no replicate support).
 
 ## 1.2 Consensus peaks from your peak-caller output
 

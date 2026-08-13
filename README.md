@@ -199,21 +199,29 @@ devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 | Input | Needed for | How to obtain |
 |:------|:-----------|:--------------|
 | `bw_path` (BigWig) | Intensity, SignalDispersion, all signal assays | Normalized, comparable tracks (CPM/RPGC/spike-in) |
-| `consensus_peaks` (GRanges) | **the shared candidate-domain universe** — Intensity-Super is computed *on these intervals* | From per-sample peak files via `get_consensus_peaks()`, or any user-defined domain set |
+| `consensus_peaks` (GRanges) | **the shared candidate-domain universe** — Intensity-Super is computed *on these intervals* | From per-sample peak files (bed / narrowPeak / broadPeak) via `rtracklayer::import()` + `get_consensus_peaks()` |
 
-The **candidate-domain universe is always required** — without it there are no
-intervals on which to integrate signal. In practice it is derived from peak
-calls (like ROSE), but it can also be any user-supplied `GRanges` (e.g. from a
-database, a fixed tiling, or externally defined domains).
+**The candidate-domain universe always comes from peak-caller output.** In
+practice, `consensus_peaks` is a `GRanges` read from the bed/narrowPeak files
+that your peak caller (MACS2, SICER, epic2, ...) produced — the same upstream
+input ROSE consumes. Without peak calls you have no candidate domains, and
+without candidate domains there are no intervals on which to integrate signal.
+The only exception is when you bring an externally defined domain set (a fixed
+tiling, a database interval table, or domains from a published analysis) and
+import it as a `GRanges`.
 
 `peak_path` (per-sample native peak files) is **optional** and needed **only**
 for the peak-level `Breadth` axis. If you analyze Intensity only, you do not
-need per-sample peak files — but you still need the candidate-domain universe.
+need per-sample native peak files — but you still need the candidate-domain
+universe derived from your peak-caller bed files.
 
 **Single-sample, Intensity-only.** A single `bw_path` + a candidate-domain
-`GRanges` is sufficient:
+`GRanges` (read from that sample's narrowPeak/bed, or any external domain set)
+is sufficient:
 
 ``` r
+my_domains <- rtracklayer::import("sample1_narrowPeak.bed")  # or any GRanges
+
 samples1 <- data.frame(
   SampleID  = "S1",
   Condition = "Control",
