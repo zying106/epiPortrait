@@ -206,24 +206,32 @@ devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 1. **Candidate-domain universe** (`consensus_peaks`, one shared set for all
    samples): defines *which regions you analyze*. It is derived from your peak
    caller's output (MACS2, SICER, epic2, ... bed/narrowPeak), the same upstream
-   input ROSE consumes. **Every analysis needs this** — including
-   Intensity-only — because without it there are no intervals to integrate
-   signal over. Exception: you may import an externally defined domain set (a
-   fixed tiling, a database interval table, or published domains) instead.
+   input ROSE consumes. **Every analysis needs this — including single-sample
+   Intensity-only** — because without it there are no intervals to integrate
+   signal over.
+   - *Single sample*: `consensus_peaks` is simply that sample's own peak file.
+   - *Multiple samples*: `consensus_peaks` is the consensus/union of all
+     samples' peak calls (`get_consensus_peaks()`).
+   - Exception: you may import an externally defined domain set (a fixed
+     tiling, a database interval table, or published domains) instead.
 
 2. **Per-sample native peaks** (`peak_path`, one file per sample): each
    sample's *own* peak calls, used to measure how wide the native enrichment is
-   per sample. **Only the `Breadth` axis needs this.** Intensity-only analyses
-   omit it.
+   per sample. **Only the `Breadth` axis needs this** — Intensity-only
+   analyses use the candidate universe alone and omit `peak_path`.
 
-So: *all* analyses need the candidate universe (a peak-derived GRanges);
-only *Breadth* analyses additionally need per-sample native peak files.
+**Bottom line: peak files are always required** (to build the candidate
+universe) — the only difference is how many and what for. Intensity-only uses
+them to define the domains; Breadth additionally uses each sample's own peaks
+for width measurement. There is no analysis mode that runs from BigWig alone.
 
 **Single-sample, Intensity-only.** One `bw_path` + one candidate-domain
-`GRanges` (read from that sample's narrowPeak/bed, or any external domain set):
+`GRanges` (read from that sample's peak file, or any external domain set).
+Note this still requires the peak file — it just serves as the single-sample
+candidate universe:
 
 ``` r
-my_domains <- rtracklayer::import("sample1_narrowPeak.bed")  # candidate universe
+my_domains <- rtracklayer::import("sample1_narrowPeak.bed")  # candidate universe (required)
 
 samples1 <- data.frame(
   SampleID  = "S1",

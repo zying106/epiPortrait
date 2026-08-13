@@ -163,23 +163,23 @@ Two different "peak files" are involved — do not confuse them.
 
 1. **Candidate-domain universe** (`consensus_peaks`, one shared set for all
    samples) defines *which regions you analyze*. It comes from your peak
-   caller's bed/narrowPeak output (MACS2, SICER, epic2, ...) via
-   `get_consensus_peaks()`, the same upstream input ROSE consumes. **Every
-   analysis needs this** — including Intensity-only — because without it there
-   are no intervals to integrate signal over. Exception: you may import an
-   externally defined domain set (fixed tiling, database interval table, or
-   published domains) as a `GRanges` instead.
+   caller's bed/narrowPeak output (MACS2, SICER, epic2, ...), the same
+   upstream input ROSE consumes. **Every analysis needs this — including
+   single-sample Intensity-only.**
+   - *Single sample*: `consensus_peaks` is that sample's own peak file.
+   - *Multiple samples*: it is the consensus/union via `get_consensus_peaks()`.
+   - Exception: you may import an externally defined domain set (fixed tiling,
+     database interval table, or published domains) as a `GRanges` instead.
 
 2. **Per-sample native peaks** (`peak_path`, one file per sample) are each
    sample's *own* peak calls, used to measure native enrichment width per
-   sample. **Only the `Breadth` axis needs this**; Intensity-only analyses
-   omit it.
+   sample. **Only the `Breadth` axis needs this**; Intensity-only analyses use
+   the candidate universe alone and omit `peak_path`.
 
-So *all* analyses need the candidate universe (a peak-derived `GRanges`); only
-*Breadth* analyses additionally need per-sample native peak files. A
-single-sample, Intensity-only run needs just `bw_path` + `consensus_peaks`;
-with one sample, use `mode = "per_sample"` and interpret `Intensity-Super` as
-a single-sample rank state (no replicate support).
+**Bottom line: peak files are always required** (to build the candidate
+universe) — the only difference is how many and what for. Intensity-only uses
+them to define the domains; Breadth additionally uses each sample's own peaks
+for width measurement. There is no analysis mode that runs from BigWig alone.
 
 ## 1.2 Consensus peaks from your peak-caller output
 
