@@ -47,5 +47,6 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          slug: zying106/epiPortrait
           fail_ci_if_error: false
           verbose: true
