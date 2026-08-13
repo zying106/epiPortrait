@@ -2,9 +2,9 @@
 
 **Replicate-Aware Epigenomic Domain Profiling and Remodeling**
 
-[![R-CMD-check](https://github.com/zhangying/epiPortrait/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zhangying/epiPortrait/actions/workflows/R-CMD-check.yaml)
-[![BiocCheck](https://github.com/zhangying/epiPortrait/actions/workflows/bioccheck.yaml/badge.svg)](https://github.com/zhangying/epiPortrait/actions/workflows/bioccheck.yaml)
-[![Codecov](https://img.shields.io/codecov/c/github/zhangying/epiPortrait)](https://app.codecov.io/gh/zhangying/epiPortrait)
+[![R-CMD-check](https://github.com/zying106/epiPortrait/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zying106/epiPortrait/actions/workflows/R-CMD-check.yaml)
+[![BiocCheck](https://github.com/zying106/epiPortrait/actions/workflows/bioccheck.yaml/badge.svg)](https://github.com/zying106/epiPortrait/actions/workflows/bioccheck.yaml)
+[![Codecov](https://img.shields.io/codecov/c/github/zying106/epiPortrait)](https://app.codecov.io/gh/zying106/epiPortrait)
 [![License: GPL (\>=
 3)](https://img.shields.io/badge/License-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Lifecycle:
@@ -185,7 +185,7 @@ BiocManager::install(c(
   "org.Hs.eg.db", "org.Mm.eg.db"
 ))
 
-devtools::install_github("zhangying/epiPortrait", build_vignettes = TRUE)
+devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 ```
 
 ------------------------------------------------------------------------
@@ -408,7 +408,7 @@ See the [vignette](vignettes/epiPortrait.Rmd) for the full workflow.
 Zhejiang University
 
 Issues and feature requests:
-<https://github.com/zhangying/epiPortrait/issues>
+<https://github.com/zying106/epiPortrait/issues>
 
 ------------------------------------------------------------------------
 
@@ -416,7 +416,7 @@ Issues and feature requests:
 
 > ZHANG Y. (2026). *epiPortrait: Replicate-Aware Epigenomic Domain Profiling*.
 > R package version 0.99.0.
-> <https://github.com/zhangying/epiPortrait>
+> <https://github.com/zying106/epiPortrait>
 
 The canonical citation is stored in `inst/CITATION` and can be retrieved
 programmatically at any time with `citation("epiPortrait")`; the BibTeX entry
@@ -428,7 +428,7 @@ above mirrors it.
   author = {Ying ZHANG},
   year   = {2026},
   note   = {R package version 0.99.0},
-  url    = {https://github.com/zhangying/epiPortrait}
+  url    = {https://github.com/zying106/epiPortrait}
 }
 ```
 

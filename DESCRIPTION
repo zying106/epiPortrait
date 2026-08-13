@@ -44,8 +44,8 @@ Config/testthat/edition: 3
 biocViews: ChIPSeq, Epigenetics, Coverage, Normalization,
     GenomeAnnotation, QualityControl, Visualization,
     PrincipalComponent
-URL: https://github.com/zhangying/epiPortrait
-BugReports: https://github.com/zhangying/epiPortrait/issues
+URL: https://github.com/zying106/epiPortrait
+BugReports: https://github.com/zying106/epiPortrait/issues
 Imports:
     digest,
     GenomeInfoDb,
