@@ -37,16 +37,7 @@ jobs:
 
       - name: Test coverage
         run: |
-          covr::package_coverage(quiet = FALSE)
+          covr::codecov(token = Sys.getenv("CODECOV_TOKEN"), quiet = FALSE)
         shell: Rscript {0}
-
-      # Official Codecov action (v5). For public repositories the upload uses
-      # the GitHub App integration when CODECOV_TOKEN is unset (optional);
-      # the token is only required for private repos.
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: zying106/epiPortrait
-          fail_ci_if_error: false
-          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
