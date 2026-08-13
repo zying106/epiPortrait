@@ -40,11 +40,12 @@ jobs:
           covr::package_coverage(quiet = FALSE)
         shell: Rscript {0}
 
-      # Official Codecov action: for public repositories this uploads via the
-      # GitHub App integration without a token (add CODECOV_TOKEN only if the
-      # repo is private or the upload is rejected).
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      # Official Codecov action (v5). For public repositories the upload uses
+      # the GitHub App integration when CODECOV_TOKEN is unset (optional);
+      # the token is only required for private repos.
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true
