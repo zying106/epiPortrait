@@ -37,5 +37,13 @@ jobs:
 
       - name: Coverage
         run: |
-          covr::codecov(token = "${{ secrets.CODECOV_TOKEN }}", quiet = FALSE)
+          token <- Sys.getenv("CODECOV_TOKEN")
+          if (nzchar(token)) {
+            covr::codecov(token = token, quiet = FALSE)
+          } else {
+            message("CODECOV_TOKEN not set; skipping upload (add it in ",
+                    "Settings -> Secrets to enable the coverage badge).")
+          }
         shell: Rscript {0}
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
