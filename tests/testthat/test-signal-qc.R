@@ -76,3 +76,58 @@ test_that(".genome_tiles builds fixed genome tiles", {
     file.path(extdata, "C1.bw"), max_windows = 10, seqlevels = "chr21")
   expect_true(all(GenomicRanges::seqnames(tiles2) == "chr21"))
 })
+
+test_that("check_signal_compatibility errors on missing BigWig files", {
+  skip_on_os("windows")
+  extdata <- system.file("extdata", package = "epiPortrait")
+  skip_if(extdata == "", "inst/extdata not found")
+  peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
+  ss <- data.frame(SampleID = c("C1"), Condition = c("C"),
+                   bw_path = "no_such_file.bw")
+  expect_error(check_signal_compatibility(ss, regions = peaks, verbose = FALSE),
+               "BigWig file\\(s\\) not found")
+})
+
+test_that("check_signal_compatibility samples regions with a fixed seed", {
+  skip_on_os("windows")
+  extdata <- system.file("extdata", package = "epiPortrait")
+  skip_if(extdata == "", "inst/extdata not found")
+  # Build a GRanges with more than max_windows entries to force subsampling.
+  big_regions <- unlist(GenomicRanges::tileGenome(
+    GenomeInfoDb::seqinfo(rtracklayer::BigWigFile(file.path(extdata, "C1.bw"))),
+    tilewidth = 100L))
+  ss <- data.frame(SampleID = c("C1", "C2"), Condition = c("C", "C"),
+                   bw_path = file.path(extdata, c("C1.bw", "C2.bw")))
+  r1 <- check_signal_compatibility(ss, regions = big_regions,
+                                   max_windows = 50, seed = 1, verbose = FALSE)
+  r2 <- check_signal_compatibility(ss, regions = big_regions,
+                                   max_windows = 50, seed = 1, verbose = FALSE)
+  expect_equal(nrow(r1), 2)
+  expect_true(all(r1$DomainSetSignalSum >= 0))
+  # same seed -> identical subsampled region set -> identical sums
+  expect_equal(r1$DomainSetSignalSum, r2$DomainSetSignalSum)
+})
+
+test_that("check_signal_compatibility without regions uses genome tiles", {
+  skip_on_os("windows")
+  extdata <- system.file("extdata", package = "epiPortrait")
+  skip_if(extdata == "", "inst/extdata not found")
+  ss <- data.frame(SampleID = c("C1", "C2"), Condition = c("C", "C"),
+                   bw_path = file.path(extdata, c("C1.bw", "C2.bw")))
+  res <- check_signal_compatibility(ss, max_windows = 50, verbose = FALSE)
+  expect_true("QCWindowSignalSum" %in% colnames(res))
+  expect_true(all(res$Status == "PASS"))
+})
+
+test_that("print.epi_signal_qc method displays the summary table", {
+  skip_on_os("windows")
+  extdata <- system.file("extdata", package = "epiPortrait")
+  skip_if(extdata == "", "inst/extdata not found")
+  peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
+  ss <- data.frame(SampleID = c("C1"), Condition = c("C"),
+                   bw_path = file.path(extdata, "C1.bw"))
+  res <- check_signal_compatibility(ss, regions = peaks, verbose = FALSE)
+  expect_s3_class(res, "epi_signal_qc")
+  # printing returns the object invisibly and does not error
+  expect_invisible(print(res))
+})

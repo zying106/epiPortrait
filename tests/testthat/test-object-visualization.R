@@ -201,6 +201,61 @@ test_that("plot_peak_track show_native_occupancy overlays span", {
 })
 
 
+test_that("plot_hockey_stick Breadth branch plots peak-level width curve", {
+  se <- call_super_domains(example_se, feature = "Breadth",
+                           mode = "per_group", group_var = "Condition",
+                           verbose = FALSE)
+  p <- plot_hockey_stick(se, feature = "Breadth", group = "Control_1",
+                         label_genes = FALSE)
+  expect_s3_class(p, "ggplot")
+  expect_true(all(c("Peak_ID", "Value", "Rank", "Type") %in%
+                    colnames(p$data)))
+  # peak-level curve: no shared-domain rank is used
+  expect_true(any(grepl("Native PeakWidth", p$labels$subtitle)))
+})
+
+test_that("plot_hockey_stick Breadth requires a replicate name", {
+  se <- call_super_domains(example_se, feature = "Breadth",
+                           mode = "per_group", group_var = "Condition",
+                           verbose = FALSE)
+  expect_error(plot_hockey_stick(se, feature = "Breadth"),
+               "pass the replicate name")
+})
+
+test_that("plot_hockey_stick Breadth errors when no peak-level calls", {
+  # no Breadth calling run -> metadata lacks breadth_peak_calls
+  expect_error(plot_hockey_stick(example_se, feature = "Breadth",
+                                 group = "Control_1"),
+               "No Breadth peak-level calls")
+})
+
+test_that("plot_hockey_stick label_genes labels top super-domains", {
+  se <- call_super_domains(example_se, feature = "Intensity",
+                           method = "tangent", log_transform = FALSE,
+                           verbose = FALSE)
+  p <- plot_hockey_stick(se, feature = "Intensity", label_genes = TRUE,
+                         top_n_label = 5)
+  expect_s3_class(p, "ggplot")
+  expect_true(length(p$labels$title) > 0)
+})
+
+test_that("plot_peak_track renders with NA native occupancy (no peak_path)", {
+  skip_on_os("windows")
+  extdata <- system.file("extdata", package = "epiPortrait")
+  skip_if(extdata == "", "inst/extdata not found")
+  # sample sheet without peak_path -> NativeOccupiedWidth is all NA
+  samples <- data.frame(SampleID = c("C1", "C2"),
+                        Condition = c("Control", "Control"),
+                        bw_path = file.path(extdata, c("C1.bw", "C2.bw")))
+  se <- build_portrait_matrix(samples,
+                              consensus_peaks = rtracklayer::import(file.path(extdata, "peaks.bed")),
+                              workers = 1)
+  expect_true(all(is.na(SummarizedExperiment::assay(se, "NativeOccupiedWidth"))))
+  p <- plot_peak_track(se, peak_id = rownames(se)[1],
+                       show_native_occupancy = TRUE)
+  expect_s3_class(p, "ggplot")
+})
+
 # ---- get_replicate_calls (design 2026-08-10) --------------------------------
 test_that("get_replicate_calls returns per-domain x per-replicate matrix", {
   se <- call_super_domains(example_se, feature = "Intensity",
