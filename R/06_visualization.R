@@ -146,6 +146,20 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
     col_rank <- paste0(feature, "_Rank__", group)
   }
   if (!col_type %in% colnames(rd)) {
+    # P2-fix: after a per_group call there is no consensus _Domain_Type column;
+    # the previous error ("Run call_super_domains first") was misleading because
+    # the user HAD called it. Point directly to the available per-group columns.
+    if (is.null(group)) {
+      pg_cols <- grep(sprintf("^%s_Call__", feature), colnames(rd), value = TRUE)
+      if (length(pg_cols) > 0) {
+        avail_groups <- sub(sprintf("^%s_Call__", feature), "", pg_cols)
+        stop(paste0(
+          "No consensus column '", col_type, "' in the object. The calls ",
+          "were made with mode='per_group'; pass `group` to plot a ",
+          "condition group (available: ",
+          paste(avail_groups, collapse = ", "), ")."))
+      }
+    }
     stop(sprintf("Run call_super_domains(se, feature='%s'%s) first.",
                  feature, if (is.null(group)) "" else
                    if (group %in% colnames(se))
@@ -423,7 +437,9 @@ plot_peak_track <- function(se, peak_id, group_var = "Condition", extend_bp = 10
     geom_area(aes(fill = Group), alpha = 0.8) +
     facet_wrap(~Sample, ncol = 1, scales = if (free_y) "free_y" else "fixed") +
     theme_classic(base_size = 12, base_family = "sans") +
-    scale_fill_brewer(palette = "Set1") +
+    # P2-fix: scale_fill_brewer("Set1") capped at 9 groups; use the package's
+    # own condition palette (ramped beyond 3 groups) for consistency.
+    scale_fill_manual(values = .epi_group_palette(plot_df$Group)) +
     labs(title = sprintf("Coverage Track: %s", peak_id),
          subtitle = sprintf("Region: %s:%d-%d%s",
                             seqnames(region), start(region), end(region),

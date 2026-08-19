@@ -1,6 +1,36 @@
 Changes in version 0.99.0 (2026-08-10)
 ---------------------------------------
 
+Expert review fixes (2026-08-14)
+
+* normalize_portrait(): the completion message no longer uses a sprintf()
+  format string without a placeholder (this produced a runtime warning
+  "argument out of range" and truncated the message to
+  "Normalization complete! Intensity adjusted; SignalDispersion "). The
+  "(bp-scale spatial descriptor) is left unchanged" note is now emitted
+  correctly.
+* plot_hockey_stick(): when the object was called with mode = "per_group"
+  and `group` is omitted, the error now states that the calls are
+  per-group and lists the available condition groups, instead of the
+  misleading "Run call_super_domains first" message.
+* annotate_epi_domains(): the strand-aware signed nearest-TSS distance is
+  now fully vectorized (one match() over the gene model instead of a
+  per-domain O(genes) subsetting loop); output is unchanged.
+* build_portrait_matrix(): the batch import path accumulates Intensity into
+  a double (`numeric()`) vector instead of `integer()` (values were never
+  truncated because R promotes on assignment, but the type was misleading
+  for continuous CPM/RPGC signal).
+* plot_peak_track(): replaced scale_fill_brewer("Set1") (capped at 9
+  groups) with the package's own condition palette, consistent with the
+  rest of the visualization suite.
+* call_super_domains(): documented the intentional asymmetry of
+  min_valid_replicates under support_rule = "fraction" (a low threshold,
+  e.g. 0.5 with n=2, resolves to 1 and can call a "Super + no_call" pair
+  Super because the user explicitly chose how much support suffices).
+* Added regression tests: fractional Intensity preservation through
+  build_portrait_matrix() (double precision, cache and non-cache paths
+  identical) and the per-group hockey-stick error message.
+
 Documentation repositioning (2026-08-11)
 
 * Package identity repositioned from "super-domain caller" to

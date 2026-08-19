@@ -14,6 +14,22 @@ test_that("plot_hockey_stick requires super_domains", {
   )
 })
 
+test_that("plot_hockey_stick points per_group users to the group argument", {
+  # P2-fix regression guard: after a per_group call there is no consensus
+  # _Domain_Type column; the error must suggest passing `group` with the
+  # available condition groups instead of the generic "run first" message.
+  se <- call_super_domains(example_se, feature = "Intensity",
+                           mode = "per_group", group_var = "Condition",
+                           verbose = FALSE)
+  expect_error(
+    plot_hockey_stick(se, feature = "Intensity"),
+    "mode='per_group'"
+  )
+  # with an explicit group the plot must work
+  p <- plot_hockey_stick(se, feature = "Intensity", group = "Control")
+  expect_s3_class(p, "ggplot")
+})
+
 test_that("plot_peak_track returns ggplot on real BigWig", {
   skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")

@@ -103,7 +103,12 @@ group. When \code{NULL} (default), it is set to the number required by the
 selected support rule (majority: floor(n/2)+1; all: n; fraction:
 ceiling(fraction*n)), so a "Super + no_call" pair in an n=2 group is
 Uncertain rather than Typical. Below the requirement the group call is
-\code{NA} / \code{Uncertain}.}
+\code{NA} / \code{Uncertain}. Note the deliberate asymmetry with
+\code{support_rule = "fraction"}: because the user explicitly chose how
+much support suffices, a low threshold (e.g. 0.5 with n=2 resolves the
+requirement to 1) can call a "Super + no_call" pair Super — the no-call
+replicate never counts as Super, it simply does not lower the bar the user
+set. Use the stricter majority rule if that behaviour is unwanted.}
 
 \item{min_quality}{Numeric. Minimum inflection quality for a reliable call
 (see \code{find_hockey_inflection}; default 0.1).}

@@ -228,8 +228,11 @@ normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
     stop("SignalDispersion was unexpectedly modified during normalization (P0-4).")
   }
 
-  message(sprintf("Normalization complete! Intensity adjusted; SignalDispersion ",
-                  "(bp-scale spatial descriptor) is left unchanged (P0-4)."))
+  # P2-fix: the previous sprintf() had a format string without a placeholder but
+  # a second argument, producing a runtime warning and truncating the message.
+  # message() concatenates its arguments directly.
+  message("Normalization complete! Intensity adjusted; SignalDispersion ",
+          "(bp-scale spatial descriptor) is left unchanged (P0-4).")
   return(se)
 }
 

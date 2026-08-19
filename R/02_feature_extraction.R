@@ -269,7 +269,10 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         dispersions <- vapply(bw_views, .signal_dispersion, numeric(1))
       } else {
         # ---- batch import to bound memory (P1-4) ---------------------------
-        batch_ints <- integer(num_peaks)
+        # P2-fix: accumulate into DOUBLE vectors. batch_ints was integer(); R
+        # silently promotes on assignment so values were never truncated, but
+        # the type was misleading for continuous (e.g. CPM/RPGC) signal.
+        batch_ints <- numeric(num_peaks)
         batch_disp <- rep(NA_real_, num_peaks)
         batch_neg <- integer(num_peaks)
         batch_pos <- integer(num_peaks)

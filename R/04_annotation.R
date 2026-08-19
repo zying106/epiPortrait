@@ -288,20 +288,25 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   # TSS lies inside the domain, distance is 0 (NOT the midpoint offset, P0-2).
   # Sign: + strand -> positive downstream of TSS, negative upstream; - strand
   # is mirrored.
+  # P2-fix: fully vectorized (the previous per-hit `for (i in qh_t)` loop did a
+  # full gene-vector subset per domain -> O(n_domains x n_genes) at mammalian
+  # scale). match() maps each hit to its gene's TSS/strand in one pass.
   signed_dist <- rep(NA_real_, n_dom)
-  for (i in qh_t) {
-    g <- genes_gr[mcols(genes_gr)$gene_id == nearest_gene_id[i]]
-    if (length(g) == 0) next
-    tss_i <- mcols(g)$tss[1]
-    s <- mcols(g)$gene_strand[1]
-    # shortest absolute distance already from distanceToNearest; recompute sign
-    d <- nearest_dist[i]
-    if (s == "+") {
-      signed_dist[i] <- if (end(domains[i]) < tss_i) -d else d
-    } else if (s == "-") {
-      signed_dist[i] <- if (start(domains[i]) > tss_i) -d else d
-    } else {
-      signed_dist[i] <- d
+  if (length(qh_t) > 0) {
+    g_idx <- match(nearest_gene_id[qh_t], mcols(genes_gr)$gene_id)
+    hit_ok <- !is.na(g_idx)
+    if (any(hit_ok)) {
+      d_hit <- nearest_dist[qh_t[hit_ok]]
+      tss_hit <- mcols(genes_gr)$tss[g_idx[hit_ok]]
+      s_hit <- mcols(genes_gr)$gene_strand[g_idx[hit_ok]]
+      sd <- d_hit  # default: unstranded (or TSS inside domain -> distance 0)
+      plus <- s_hit == "+"
+      sd[plus] <- ifelse(GenomicRanges::end(domains)[qh_t[hit_ok][plus]] < tss_hit[plus],
+                         -d_hit[plus], d_hit[plus])
+      minus <- s_hit == "-"
+      sd[minus] <- ifelse(GenomicRanges::start(domains)[qh_t[hit_ok][minus]] > tss_hit[minus],
+                          -d_hit[minus], d_hit[minus])
+      signed_dist[qh_t[hit_ok]] <- sd
     }
   }
 

@@ -101,3 +101,37 @@ test_that("condition-aware consensus and combine work on real BigWigs", {
                     c("Intensity-Super", "Breadth-Super", "Dual-Super",
                       "Typical", "Uncertain")))
 })
+
+test_that("Intensity preserves fractional (non-integer) signal values", {
+  # P2-fix regression guard: Intensity is an integral over CONTINUOUS signal,
+  # so fractional values must survive build_portrait_matrix() exactly as
+  # double-precision — never truncated to integers. This catches any
+  # integer()-typed accumulation path (batch_ints) or type-promotion
+  # regression. Domain widths (61/73/89 bp) deliberately produce FRACTIONAL
+  # domain sums so an integer-truncation bug cannot hide behind whole numbers.
+  skip_on_os("windows")
+  tmp <- tempfile(fileext = ".bw")
+  on.exit(unlink(tmp))
+  dom <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(start = c(101, 501, 901),
+                             width = c(61, 73, 89)),
+    seqinfo = GenomeInfoDb::Seqinfo("chr1", 5000))
+  sig <- dom
+  S4Vectors::mcols(sig)$score <- c(0.5, 1.75, 2.25)
+  rtracklayer::export(sig, tmp, format = "BigWig")
+
+  ss <- data.frame(SampleID = "S1", Condition = "C", bw_path = tmp,
+                   stringsAsFactors = FALSE)
+  se <- build_portrait_matrix(ss, consensus_peaks = dom, workers = 1)
+
+  int <- as.matrix(SummarizedExperiment::assay(se, "Intensity"))
+  expect_true(is.double(int))                            # double, not integer
+  expect_equal(unname(int[, 1]), c(0.5 * 61, 1.75 * 73, 2.25 * 89))  # 30.5/127.75/200.25
+  # cache path (raw-coverage RDS) must give the identical fractional values
+  cache <- tempfile()
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  se2 <- build_portrait_matrix(ss, consensus_peaks = dom, workers = 1,
+                               cache_dir = cache)
+  expect_identical(as.matrix(SummarizedExperiment::assay(se2, "Intensity")),
+                   int)
+})
