@@ -12,7 +12,9 @@ get_domain_genes(
   group = NULL,
   expression_priority = c("none", "expressed_first", "high_expression_first"),
   min_expression = NULL,
-  unique_genes = TRUE
+  unique_genes = TRUE,
+  nearest_tss_cutoff_bp = getOption("epiPortrait.nearest_tss_cutoff_bp", 10000),
+  rank_by = c("tier", "bedpe_score")
 )
 }
 \arguments{
@@ -40,10 +42,34 @@ requires an explicit user threshold (no universal meaning of 1). For
 
 \item{unique_genes}{Logical. Collapse to unique genes (default TRUE),
 retaining the highest-priority domain association per gene.}
+
+\item{nearest_tss_cutoff_bp}{Numeric. Distance (bp) below which a
+\code{nearest_tss} relation is treated as a strong PROXIMAL candidate and
+ranked above \code{gene_body_overlap}/distal links; a currently-nearest
+but FAR TSS (beyond this cutoff) is downgraded to the lowest evidence tier.
+This prevents a "nearest but remote" gene (e.g. 500 kb away) from ranking
+equal to \code{promoter_overlap} evidence. Defaults to the option
+\code{epiPortrait.nearest_tss_cutoff_bp}, or 10000 if unset. This keeps
+\code{annotate_epi_domains()} and \code{get_domain_genes()} on the same
+proximity definition.}
+
+\item{rank_by}{Character. Primary ordering key for \code{candidate_priority}.
+\itemize{
+\item \code{"tier"} (default): evidence hierarchy first (see Details),
+expression as tie-breaker — the original behaviour.
+\item \code{"bedpe_score"}: descending 3D contact strength
+(\code{bedpe_contact_score}) first, then the evidence tier and
+expression as tie-breakers. Requires that
+\code{annotate_epi_domains()} was run with
+\code{bedpe_score_col}; pairs without a usable score fall back to
+the tier ordering. This implements contact-strength-first target
+prioritization (dominant-loop style).
+}}
 }
 \value{
 A data.frame: domain_id, gene_id, gene_symbol, relation_types,
-bedpe_supported, bedpe_support_count, expression_value,
+bedpe_supported, bedpe_support_count, bedpe_contact_score,
+nearest_tss_distance_bp (when available), expression_value,
 expression_status, expression_rank, candidate_priority.
 }
 \description{

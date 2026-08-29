@@ -23,6 +23,13 @@ epiPortrait provides a replicate-aware framework that separates **integrated
 signal magnitude (Intensity)** from **replicate-specific native peak breadth**,
 and follows how these domain states remodel across biological conditions.
 
+> **Terminology.** *Replicate-aware* means each biological replicate is called
+> independently and replicate-level evidence is aggregated through explicit
+> support rules with an `Uncertain` abstention class. It does **not** denote
+> statistical modeling of between-replicate variance; variance-aware inference
+> on the continuous signal is provided separately by
+> `analyze_differential_domains()` (limma empirical Bayes).
+
 ------------------------------------------------------------------------
 
 ## Why epiPortrait?
@@ -410,9 +417,22 @@ not reliable.
 ### Module 4: Annotation & Visualization
 
 ``` r
-# Domain-aware annotation (nearest TSS / promoter / gene-body / contained)
+# Domain-aware annotation (nearest TSS / promoter / gene-body / contained,
+# optional BEDPE 3D-contact evidence and RNA-seq expression)
 se <- annotate_epi_domains(se, genome = "hg38")
 candidates <- get_domain_genes(se, group = "Control")
+
+# The annotation result is also exposed as a three-level structure in
+# metadata(se), so users get a default "what to look at" table plus full
+# audit detail without joining:
+#
+#   summary(metadata(se)$annotation_summary)                 # 1 row / domain
+#   head(metadata(se)$domain_gene_links_dedup)               # 1 row / domain-gene pair
+#   head(metadata(se)$domain_gene_links)                     # raw per-relationship detail
+#
+# Two of the most-used summary columns are also placed directly on rowData:
+#   rowData(se)$n_bedpe_contact_gene
+#   rowData(se)$top_candidate_gene_symbol
 
 # Hockey-stick ranking plot
 se <- call_super_domains(se, feature = "Intensity")
@@ -425,6 +445,45 @@ plot_domain_feature_profile(se, peak_id = rownames(se)[1], group_var = "Conditio
 plot_portrait_pca(se, feature = "Intensity", group_var = "Condition")
 plot_portrait_correlation(se, feature = "Intensity")
 ```
+
+### Module 4.5: Differential Domain Analysis (continuous signal)
+
+Where `compare_superdomains()` reports relative *state* transitions between
+discrete phenotypes, `analyze_differential_domains()` adds a statistical
+*P-value* for a continuous signal change between condition groups, computed
+directly on the integrated BigWig intensity with limma:
+
+``` r
+# Two-group comparison (requires >=2 replicates per group for variance)
+se <- analyze_differential_domains(
+  se, feature = "Intensity",
+  ref_group = "Control", target_group = "Treatment")
+table(rowData(se)$Intensity_DiffStatus)   # Gain / Loss / NS
+
+# Volcano plot with the package palette
+plot_differential_volcano(se, feature = "Intensity", label_n = 10)
+```
+
+**Design flexibility.** Arbitrary linear models are supported via
+`design` + `contrast` (e.g. paired or batch-corrected designs):
+
+``` r
+se <- analyze_differential_domains(
+  se, feature = "Intensity",
+  design  = ~ 0 + Condition + Batch,
+  contrast = c(Batch = "...", ...))   # or a makeContrasts-style matrix
+```
+
+**Interpretation and scope.** The test runs on the log-transformed integrated
+continuous signal (not raw fragment counts), so it is a defensible but
+*approximate* differential analysis that is directly usable from BigWig inputs.
+For exact DESeq2/DiffBind-style count statistics, obtain per-domain counts
+externally and run those tools; epiPortrait provides the coordinate universe
+and the continuous phenotype layer that pairs with that workflow.
+
+**Note on power.** limma needs residual variance: each group must have >=2
+replicates. Single-sample-per-group (descriptive) designs are not tested here —
+use `mode = "per_sample"` ranking for those instead.
 
 ------------------------------------------------------------------------
 

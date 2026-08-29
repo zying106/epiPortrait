@@ -14,7 +14,15 @@
   if (!is.null(mark)) {
     preset <- tryCatch(get_mark_preset(mark), error = function(e) NULL)
     if (!is.null(preset)) {
-      names(cols) <- preset$class_labels
+      # map by NAME, not by position: the canonical colour is bound to the
+      # canonical class key, and the value is the mark-aware display label.
+      # A positional assignment names(cols) <- preset$class_labels would
+      # scramble the colours when class_labels are not in the same order as
+      # cols (e.g. marks whose labels start with the super classes).
+      lab <- stats::setNames(preset$class_labels,
+                             c("Intensity-Super", "Breadth-Super",
+                               "Dual-Super", "Typical", "Uncertain"))
+      names(cols) <- unname(lab[names(cols)])
     }
   }
   cols
@@ -263,10 +271,6 @@ plot_domain_landscape <- function(se, group = NULL,
     .epi_theme_publication() +
     ggplot2::labs(
       title = "Domain Architecture Landscape",
-      subtitle = sprintf("%s x %s%s%s", x_feature, y_feature,
-                         if (transform == "log10p1") " (log10, display only)" else "",
-                         if (label_n > 0 && label_mode == "per_class")
-                           "; labels = representative domain of each class" else ""),
       x = if (transform == "log10p1") paste0(x_feature, " (log10)") else x_feature,
       y = if (transform == "log10p1") paste0(y_feature, " (log10)") else y_feature)
 
@@ -417,7 +421,6 @@ plot_class_transition <- function(se, ref_group, target_group,
   tgt_lab <- if (is.null(target_role)) target_group else sprintf("%s (%s)", target_group, target_role)
   sprintf("%s -> %s (relative, per-group cutoffs)", ref_lab, tgt_lab)
 }
-
 
 #' Plot Replicate-Support Distribution
 #'

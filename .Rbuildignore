@@ -37,3 +37,5 @@
 ^epiPortrait1[0-9]_.*\.md$
 ^epiPortrait_publication_benchmark_blueprint_v2_2026-08-11\.md$
 ^epiPortrait_tumor_benchmark_dataset_strategy_2026-08-11\.md$
+^tests_latest_review_and_v2_optimization
+^\._

@@ -4,6 +4,8 @@
 
 library(epiPortrait)
 library(GenomicRanges)
+library(SummarizedExperiment)
+library(S4Vectors)
 
 # ---- helper: build a tiny synthetic TxDb on chr1 ----------------------------
 make_tiny_txdb <- function() {
@@ -458,4 +460,110 @@ test_that("domain_gene_links exported to annotation/ (P1-14)", {
   out <- export_epiportrait_results(se, outdir = tempfile("epi_anno_export"))
   expect_true(file.exists(file.path(out, "annotation", "domain_gene_links.tsv")))
   expect_true(file.exists(file.path(out, "annotation", "provenance.txt")))
+})
+
+# ---- BEDPE contact-score aggregation (bedpe_score_col) ----------------------
+test_that("bedpe_score_col aggregates scores into links, dedup and summary", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  # two records between the same anchor pair; each record links domain1<->gene4
+  # (direction 1) AND domain3<->gene4 (direction 2), so every touched pair has
+  # TWO unique supporting records whose scores must be summed.
+  bedpe_df <- data.frame(
+    chrom1 = "chr1", start1 = 1499, end1 = 2500,
+    chrom2 = "chr1", start2 = 59999, end2 = 61000,
+    score = c(2, 10),
+    stringsAsFactors = FALSE)
+  se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df,
+                             bedpe_score_col = "score")
+  links <- S4Vectors::metadata(se)$domain_gene_links
+  bl <- links[links$evidence_source == "bedpe", ]
+  expect_true("contact_score" %in% colnames(links))
+  expect_true(all(bl$contact_score %in% c(2, 10)))
+  expect_equal(sum(is.na(links$contact_score[links$evidence_source != "bedpe"])),
+               sum(links$evidence_source != "bedpe"))
+  dedup <- S4Vectors::metadata(se)$domain_gene_links_dedup
+  expect_true("bedpe_contact_score" %in% colnames(dedup))
+  bp_pairs <- dedup[dedup$evidence_sources == "bedpe" |
+                      grepl("bedpe_promoter_contact", dedup$relation_types), ]
+  expect_true(nrow(bp_pairs) >= 2)
+  expect_true(all(bp_pairs$bedpe_contact_score == 12))   # unique-record sum
+  expect_true(all(dedup$bedpe_contact_score[dedup$bedpe_support_count == 0] == 0,
+                  na.rm = TRUE))
+  summ <- S4Vectors::metadata(se)$annotation_summary
+  expect_true("bedpe_contact_score" %in% colnames(summ))
+  d1 <- summ$Domain_ID == rownames(se)[1]
+  d3 <- summ$Domain_ID == rownames(se)[3]
+  expect_equal(summ$bedpe_contact_score[d1], 12)
+  expect_equal(summ$bedpe_contact_score[d3], 12)
+  expect_equal(summ$n_bedpe_contact_gene[d1], 1)
+  # rowData mirror
+  expect_equal(rowData(se)$bedpe_contact_score[d1], 12)
+  # provenance records the score column
+  expect_match(S4Vectors::metadata(se)$bedpe_provenance$score_column, "score")
+})
+
+test_that("default (no bedpe_score_col) keeps count-only behaviour", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  bedpe_df <- data.frame(
+    chrom1 = "chr1", start1 = 1499, end1 = 2500,
+    chrom2 = "chr1", start2 = 59999, end2 = 61000,
+    score = c(5),
+    stringsAsFactors = FALSE)
+  se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df)
+  links <- S4Vectors::metadata(se)$domain_gene_links
+  expect_true(all(is.na(links$contact_score)))
+  dedup <- S4Vectors::metadata(se)$domain_gene_links_dedup
+  # supported pairs stay NA (unscored config); unsupported pairs keep 0
+  expect_true(all(is.na(dedup$bedpe_contact_score[dedup$bedpe_support_count > 0])))
+  expect_true(all(dedup$bedpe_contact_score[dedup$bedpe_support_count == 0] == 0,
+                  na.rm = TRUE))
+  summ <- S4Vectors::metadata(se)$annotation_summary
+  contacted <- summ$n_bedpe_contact_gene > 0
+  expect_true(all(is.na(summ$bedpe_contact_score[contacted])))
+  expect_true(all(summ$bedpe_contact_score[!contacted] == 0))
+})
+
+test_that("bedpe_score_col input validation fails loudly", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  good <- data.frame(chrom1 = "chr1", start1 = 1499, end1 = 2500,
+                     chrom2 = "chr1", start2 = 59999, end2 = 61000,
+                     stringsAsFactors = FALSE)
+  expect_error(annotate_epi_domains(se, genome = txdb, bedpe_score_col = 8),
+               "requires a BEDPE")
+  expect_error(annotate_epi_domains(se, genome = txdb, bedpe = good,
+                                    bedpe_score_col = 3), "coordinates")
+  expect_error(annotate_epi_domains(se, genome = txdb, bedpe = good,
+                                    bedpe_score_col = 99), "index must be")
+  expect_error(annotate_epi_domains(se, genome = txdb, bedpe = good,
+                                    bedpe_score_col = "nope"), "not found")
+  expect_error(annotate_epi_domains(se, genome = txdb, bedpe = good,
+                                    bedpe_score_col = "chrom1"), "extra column")
+})
+
+test_that("get_domain_genes exposes bedpe_contact_score and rank_by works", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  bedpe_df <- data.frame(
+    chrom1 = "chr1", start1 = 34999, end1 = 45000,  # inside domain3
+    chrom2 = "chr1", start2 = 59999, end2 = 61000,  # gene4 promoter
+    score = c(7.5),
+    stringsAsFactors = FALSE)
+  se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df,
+                             bedpe_score_col = "score")
+  cand_default <- get_domain_genes(se, rank_by = "tier")
+  cand_score <- get_domain_genes(se, rank_by = "bedpe_score")
+  expect_true(all(c("bedpe_contact_score") %in% colnames(cand_default)))
+  # scored pair exists with the right value
+  sc <- cand_score$bedpe_contact_score[!is.na(cand_score$bedpe_contact_score) &
+                                         cand_score$bedpe_contact_score > 0]
+  expect_true(length(sc) >= 1 && all(sc == 7.5))
+  # rank_by = "bedpe_score": the highest-scoring pair is ranked FIRST overall
+  best_sc <- max(cand_score$bedpe_contact_score, na.rm = TRUE)
+  top_row <- cand_score[cand_score$candidate_priority ==
+                          min(cand_score$candidate_priority[cand_score$bedpe_contact_score == best_sc]), ]
+  expect_gte(min(cand_score$candidate_priority[top_row$domain_id == rownames(se)[3]]),
+             min(cand_score$candidate_priority))
 })

@@ -211,6 +211,20 @@
 #' @param bedpe Character path to a BEDPE file, a data.frame, or NULL. Only
 #'   \code{bedpe_promoter_contact} evidence is added (3D promoter-contact);
 #'   records are read-only (no calling / filtering / merging).
+#' @param bedpe_score_col Numeric or character or NULL. Optional column holding
+#'   a per-record contact STRENGTH (e.g. the FitHiChIP TMM-normalized contact
+#'   frequency in column 8). Integer column index (>= 7; columns 1-6 are the
+#'   coordinates) or a column name (file inputs expose V1..Vn names; a
+#'   data.frame input can carry arbitrary names). When given, three quantitative
+#'   outputs are produced IN ADDITION to the count-based evidence:
+#'   \code{metadata(se)$domain_gene_links$contact_score} (per evidence row),
+#'   \code{bedpe_contact_score} in the dedup table (summed over the UNIQUE
+#'   supporting records of the pair), and \code{bedpe_contact_score} in the
+#'   annotation summary (summed over the unique records of the domain).
+#'   Rationale: FitHiChIP-style TMM BEDPEs often share an identical loop SET
+#'   across conditions and vary only in score, so count-based integration alone
+#'   cannot capture contact dynamics. NULL (default) keeps the previous
+#'   count-only behaviour unchanged.
 #' @param expression A gene-level expression object: a wide matrix (genes x
 #'   samples), a long data.frame (gene_id, SampleID, Condition, expression), or
 #'   NULL.
@@ -224,9 +238,22 @@
 #' @return \code{se} with rowData columns: primary_genomic_context,
 #'   nearest_tss_gene_id, nearest_tss_gene_symbol, nearest_tss_distance_bp,
 #'   promoter_overlap_gene_count, gene_body_overlap_gene_count,
-#'   fully_contained_gene_count; metadata(se)$domain_gene_links,
-#'   metadata(se)$annotation_provenance, and (if provided)
-#'   metadata(se)$bedpe_provenance / metadata(se)$expression_provenance.
+#'   fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score
+#'   (only when \code{bedpe_score_col} is given), and
+#'   top_candidate_gene_symbol; the annotation result is also exposed as a
+#'   three-level structure in metadata:
+#'   \itemize{
+#'     \item \code{metadata(se)$annotation_summary} — ONE ROW PER DOMAIN master
+#'           table (nearest gene, per-evidence overlap/gene counts, number of
+#'           BEDPE-contacted genes, and a representative top candidate gene).
+#'     \item \code{metadata(se)$domain_gene_links_dedup} — ONE ROW PER
+#'           domain-gene pair, with summarised \code{relation_types},
+#'           \code{evidence_sources} and a \code{best_relation} label.
+#'     \item \code{metadata(se)$domain_gene_links} — raw per-relationship
+#'           detail (for auditing).
+#'   }
+#'   \code{metadata(se)$annotation_provenance}, and (if provided)
+#'   \code{metadata(se)$bedpe_provenance} / \code{metadata(se)$expression_provenance}.
 #' @import GenomicRanges
 #' @import SummarizedExperiment
 #' @examples
@@ -237,11 +264,12 @@
 #' }
 #' @export
 annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NULL,
-                                 promoter_upstream = 3000, promoter_downstream = 3000,
-                                 bedpe = NULL, expression = NULL,
-                                 expression_type = NULL,
-                                 aggregate_fun = "median",
-                                 gene_id_keytype = NULL) {
+                                  promoter_upstream = 3000, promoter_downstream = 3000,
+                                  bedpe = NULL, bedpe_score_col = NULL,
+                                  expression = NULL,
+                                  expression_type = NULL,
+                                  aggregate_fun = "median",
+                                  gene_id_keytype = NULL) {
   # P1-10: validate promoter window parameters (negative values would be
   # "corrected" by pmin/pmax but are biologically meaningless).
   for (nm in c("promoter_upstream", "promoter_downstream")) {
@@ -249,6 +277,16 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
     if (length(v) != 1L || !is.numeric(v) || !is.finite(v) || v < 0) {
       stop(sprintf("%s must be a finite non-negative number.", nm))
     }
+  }
+  # BEDPE contact-score column: only meaningful together with a BEDPE input.
+  # Type/index validation happens inside .load_bedpe() where the table shape
+  # is known; here we only catch the obvious misuse early.
+  if (!is.null(bedpe_score_col) && is.null(bedpe)) {
+    stop("bedpe_score_col requires a BEDPE input (`bedpe`).")
+  }
+  if (!is.null(bedpe_score_col) &&
+      !is.numeric(bedpe_score_col) && !is.character(bedpe_score_col)) {
+    stop("bedpe_score_col must be an integer column index or a column name.")
   }
   # ---- genome resources ----------------------------------------------------
   res <- .resolve_genome_resources(genome, txdb = txdb, anno_db = anno_db)
@@ -417,8 +455,9 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
 
   # ---- BEDPE 3D evidence (design §39-46) ------------------------------------
   bedpe_prov <- NULL
+  bp_res <- NULL
   if (!is.null(bedpe)) {
-    bp_res <- .load_bedpe(bedpe)
+    bp_res <- .load_bedpe(bedpe, score_col = bedpe_score_col)
     bedpe_prov <- bp_res$provenance
     # P1-5: seqlevel compatibility must actually be enforced for BEDPE. A
     # chr1-vs-1 style mismatch would silently yield zero contacts.
@@ -482,6 +521,19 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   }
   rowData(se)$nearest_tss_gene_symbol <- symbol_of(nearest_gene_id)
 
+  # ---- BEDPE record-level contact scores (optional, bedpe_score_col) --------
+  # Scores live on the raw evidence rows (audit level). They are joined by
+  # bedpe_record_id (identical for both anchors of a record), so no change to
+  # the rbind shapes above is needed. Linear rows keep contact_score = NA.
+  links$contact_score <- NA_real_
+  if (!is.null(bp_res) && !is.null(bp_res$score)) {
+    is_bp_row <- !is.na(links$bedpe_record_id) & links$evidence_source == "bedpe"
+    score_lookup <- stats::setNames(bp_res$score, bp_res$bedpe_id)
+    hit <- is_bp_row & links$bedpe_record_id %in% names(score_lookup)
+    links$contact_score[hit] <-
+      unname(score_lookup[links$bedpe_record_id[hit]])
+  }
+
   # ---- RNA-seq expression evidence (design §47-65) --------------------------
   expr_prov <- NULL
   expr_data <- NULL
@@ -523,6 +575,192 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
     expr_data <- expr$summary  # gene_id x Condition median matrix
   }
 
+  # ---- user-facing export tables (annotation layer, 2026-08-21) -----------
+  # The annotation result is exposed at three levels so users get a default
+  # "what to look at" table plus full audit detail without having to join:
+  #
+  #   * metadata(se)$annotation_summary      : ONE ROW PER DOMAIN (master table)
+  #   * metadata(se)$domain_gene_links_dedup : ONE ROW PER domain-gene PAIR
+  #   * metadata(se)$domain_gene_links       : raw per-relationship detail (audit)
+  #
+  # This mirrors the domain-centred philosophy: a user first reads the master
+  # summary (representative/count columns), drills into the dedup pair table for
+  # the candidate gene set, and only uses the raw detail for auditing.
+
+  # --- evidence hierarchy for a "best relation" label per domain-gene pair ---
+  # Uses the SAME distance-aware 5-tier hierarchy as get_domain_genes() so that
+  # best_relation / top_candidate_gene are consistent with candidate_priority
+  # (benchmark review 2026-08-21): promoter overlap (4) > BEDPE contact (3) >
+  # proximal nearest-TSS <= cutoff (2) > gene-body/contained (1) > far nearest/other (0).
+  cutoff_bp <- getOption("epiPortrait.nearest_tss_cutoff_bp", 10000L)
+  .pair_tier <- function(types, dist) {
+    has_promoter <- grepl("promoter_overlap", types)
+    has_bedpe    <- grepl("bedpe_promoter_contact", types)
+    has_nearest  <- grepl("nearest_tss", types)
+    has_body     <- grepl("gene_body_overlap|fully_contained", types)
+    near <- has_nearest & is.finite(abs(dist)) & abs(dist) <= cutoff_bp
+    tier <- rep(0L, length(types))
+    tier <- pmax(tier, ifelse(has_promoter, 4L, 0L))
+    tier <- pmax(tier, ifelse(has_bedpe, 3L, 0L))
+    tier <- pmax(tier, ifelse(near, 2L, 0L))
+    tier <- pmax(tier, ifelse(has_body, 1L, 0L))
+    tier
+  }
+
+  if (nrow(links) > 0) {
+    # --- level 2: unique domain-gene pairs with summarised relations ---------
+    # Vectorised with tapply (C-backed) on the (domain_id, gene_id) key; no
+    # per-pair data.frame rbind, so it scales to 10^5-10^6 links.
+    key  <- paste(links$domain_id, links$gene_id, sep = "|")
+    # per-row tier (distance-aware). distance_to_tss_bp only on nearest_tss rows.
+    row_tier <- .pair_tier(links$relation_type, links$distance_to_tss_bp)
+    # one-row-per-key collapse of lists via vapply over tapply result is still
+    # needed for per-key composites; instead use aggregate for the fast ones.
+    dom_part  <- sub("\\|.*$", "", key)
+    gene_part <- sub("^[^\\|]*\\|", "", key)
+
+    # collapse relation_types and evidence_sources per key (vectorised)
+    unique_rel <- unlist(lapply(split(as.character(links$relation_type), key),
+                                function(x) paste(sort(unique(x)), collapse = ";")))
+    unique_ev  <- unlist(lapply(split(as.character(links$evidence_source), key),
+                                function(x) paste(sort(unique(x)), collapse = ";")))
+    # per-pair nearest TSS distance (min abs over the pair's nearest_tss rows)
+    pair_dist <- unlist(lapply(split(links$distance_to_tss_bp, key), function(d) {
+      suppressWarnings(min(abs(d), na.rm = TRUE))
+    }))
+    pair_dist[is.infinite(pair_dist) | is.na(pair_dist)] <- NA_real_
+    # best relation per key: the element with the max tier, tie -> first
+    best_rel <- unlist(lapply(split(seq_along(key), key), function(i) {
+      links$relation_type[i][which.max(row_tier[i])]
+    }))
+    best_ev  <- unlist(lapply(split(seq_along(key), key), function(i) {
+      links$evidence_source[i][which.max(row_tier[i])]
+    }))
+    # bedpe_support_count: number of unique BEDPE records per pair (bedpe rows only)
+    is_bedpe <- !is.na(links$bedpe_record_id) & links$evidence_source == "bedpe"
+    bed_ct <- setNames(integer(length(unique(key))), unique(key))
+    if (any(is_bedpe)) {
+      bk <- key[is_bedpe]
+      bed_tab <- tapply(links$bedpe_record_id[is_bedpe], bk,
+                        function(x) length(unique(x)))
+      bed_ct[names(bed_tab)] <- as.integer(bed_tab)
+    }
+    # pair-level contact score (bedpe_score_col): summed over the UNIQUE
+    # supporting records of the pair. Pairs without BEDPE evidence keep 0;
+    # a pair with records but no usable score values stays NA so that
+    # "no 3D evidence" and "3D evidence without a score" remain distinct
+    # (this also covers runs WITHOUT bedpe_score_col).
+    bed_sc <- setNames(numeric(length(unique(key))), unique(key))
+    if (any(is_bedpe)) {
+      idx_bp <- which(is_bedpe)
+      if (!is.null(bp_res) && !is.null(bp_res$score)) {
+        sc_tab <- tapply(idx_bp, key[idx_bp], function(i) {
+          s <- links$contact_score[i][!duplicated(links$bedpe_record_id[i])]
+          if (all(is.na(s))) return(NA_real_)
+          sum(s, na.rm = TRUE)
+        })
+        bed_sc[names(sc_tab)] <- as.numeric(sc_tab)
+      } else {
+        bed_sc[unique(key[is_bedpe])] <- NA_real_
+      }
+    }
+    # --- build from per-key splits directly, grouping by key preserving order ---
+    sp_idx  <- split(seq_along(key), key)
+    n_pairs <- length(sp_idx)
+    sym_lookup <- stats::setNames(links$gene_symbol, key)  # first occurrence
+    dedup <- data.frame(
+      domain_id        = vapply(sp_idx, function(i) dom_part[i[1]], character(1)),
+      gene_id          = vapply(sp_idx, function(i) gene_part[i[1]], character(1)),
+      gene_symbol      = vapply(sp_idx, function(i) {
+                             s <- links$gene_symbol[i]; s[!is.na(s)][1]
+                           }, character(1)),
+      relation_types   = unique_rel[names(sp_idx)],
+      evidence_sources = unique_ev[names(sp_idx)],
+      best_relation    = best_rel[names(sp_idx)],
+      best_evidence_source = best_ev[names(sp_idx)],
+      best_tier        = .pair_tier(best_rel[names(sp_idx)], pair_dist[names(sp_idx)]),
+      nearest_tss_distance_bp = pair_dist[names(sp_idx)],
+      bedpe_support_count = bed_ct[names(sp_idx)],
+      bedpe_contact_score = unname(bed_sc[names(sp_idx)]),
+      stringsAsFactors = FALSE)
+    dedup$gene_symbol[is.na(dedup$gene_symbol)] <- sym_lookup[names(sp_idx)][is.na(dedup$gene_symbol)]
+    rownames(dedup) <- NULL
+  } else {
+    dedup <- data.frame(domain_id = character(0), gene_id = character(0),
+                        gene_symbol = character(0), relation_types = character(0),
+                        evidence_sources = character(0), best_relation = character(0),
+                        best_evidence_source = character(0), best_tier = integer(0),
+                        nearest_tss_distance_bp = numeric(0),
+                        bedpe_support_count = integer(0),
+                        bedpe_contact_score = numeric(0), stringsAsFactors = FALSE)
+  }
+
+  # --- level 1: one row per domain (master summary table) -------------------
+  n_dom <- length(domains)
+  dom_ids <- rownames(se)
+  # per-domain contact score: summed over the UNIQUE records linked to the
+  # domain (any contacted gene). Domains without BEDPE evidence keep 0;
+  # domains WITH contacts but without usable scores (e.g. runs without
+  # bedpe_score_col) stay NA, mirroring the pair-level semantics.
+  dom_score <- setNames(numeric(n_dom), dom_ids)
+  is_bp2 <- !is.na(links$bedpe_record_id) & links$evidence_source == "bedpe"
+  if (any(is_bp2)) {
+    idx_bp2 <- which(is_bp2)
+    if (!is.null(bp_res) && !is.null(bp_res$score)) {
+      ds_tab <- tapply(idx_bp2, links$domain_id[idx_bp2], function(i) {
+        s <- links$contact_score[i][!duplicated(links$bedpe_record_id[i])]
+        if (all(is.na(s))) return(NA_real_)
+        sum(s, na.rm = TRUE)
+      })
+      dom_score[names(ds_tab)] <- as.numeric(ds_tab)
+    } else {
+      dom_score[unique(links$domain_id[idx_bp2])] <- NA_real_
+    }
+  }
+  if (nrow(dedup) > 0) {
+    n_genes_per_dom <- vapply(split(dedup$gene_id, dedup$domain_id), length, integer(1))
+    n_bedpe_gene    <- vapply(split(dedup$bedpe_support_count > 0, dedup$domain_id),
+                              sum, integer(1))
+    # top candidate gene per domain: strongest best_tier, then symbol
+    rel_val <- dedup$best_tier
+    ord_idx <- order(match(dedup$domain_id, dom_ids), -rel_val,
+                     !is.na(dedup$gene_symbol), dedup$gene_symbol)
+    d_sort  <- dedup[ord_idx, , drop = FALSE]
+    d_first <- d_sort[!duplicated(d_sort$domain_id), , drop = FALSE]
+    top_map <- stats::setNames(d_first$gene_symbol, d_first$domain_id)
+    top_id  <- stats::setNames(d_first$gene_id, d_first$domain_id)
+  } else {
+    n_genes_per_dom <- setNames(integer(0), character(0))
+    n_bedpe_gene    <- setNames(integer(0), character(0))
+    top_map <- setNames(character(0), character(0))
+    top_id  <- setNames(character(0), character(0))
+  }
+
+  summary_tbl <- data.frame(
+    Domain_ID = dom_ids,
+    primary_genomic_context = rowData(se)$primary_genomic_context,
+    nearest_tss_gene_symbol = rowData(se)$nearest_tss_gene_symbol,
+    nearest_tss_distance_bp = as.numeric(rowData(se)$nearest_tss_distance_bp),
+    n_promoter_overlap_gene  = as.integer(rowData(se)$promoter_overlap_gene_count),
+    n_gene_body_overlap_gene = as.integer(rowData(se)$gene_body_overlap_gene_count),
+    n_fully_contained_gene   = as.integer(rowData(se)$fully_contained_gene_count),
+    n_linked_gene   = as.integer(unname(n_genes_per_dom[dom_ids])),
+    n_bedpe_contact_gene = as.integer(unname(n_bedpe_gene[dom_ids])),
+    bedpe_contact_score = as.numeric(unname(dom_score[dom_ids])),
+    top_candidate_gene_symbol = unname(top_map[dom_ids]),
+    top_candidate_gene_id     = unname(top_id[dom_ids]),
+    stringsAsFactors = FALSE)
+  summary_tbl$n_linked_gene[is.na(summary_tbl$n_linked_gene)] <- 0L
+  summary_tbl$n_bedpe_contact_gene[is.na(summary_tbl$n_bedpe_contact_gene)] <- 0L
+
+  # also surface the two most useful summary columns directly on rowData so a
+  # user can sort/filter on the SE object without pulling metadata
+  rowData(se)$n_bedpe_contact_gene     <- summary_tbl$n_bedpe_contact_gene
+  rowData(se)$bedpe_contact_score      <- summary_tbl$bedpe_contact_score
+  rowData(se)$top_candidate_gene_symbol <- summary_tbl$top_candidate_gene_symbol
+
+  S4Vectors::metadata(se)$annotation_summary   <- summary_tbl
+  S4Vectors::metadata(se)$domain_gene_links_dedup <- dedup
   S4Vectors::metadata(se)$domain_gene_links <- links
   S4Vectors::metadata(se)$annotation_provenance <- list(
     genome = res$genome_name,
@@ -552,7 +790,7 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
 # Read-only: no filtering, merging, or calling. Original records are not
 # modified or re-scored; bedpe_record_id links derived evidence back to the
 # source file.
-.load_bedpe <- function(bedpe) {
+.load_bedpe <- function(bedpe, score_col = NULL) {
   if (is.character(bedpe)) {
     if (!file.exists(bedpe)) stop("BEDPE file not found: ", bedpe)
     tab <- utils::read.table(bedpe, header = FALSE, sep = "\t",
@@ -569,6 +807,40 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   if (ncol(tab) < 6) stop("BEDPE requires at least 6 columns (chrom1..end2).")
   extra <- if (ncol(tab) > 6) tab[, 7:ncol(tab), drop = FALSE] else NULL
   n <- nrow(tab)
+  # ---- optional contact-score column (bedpe_score_col) ----------------------
+  # Resolved against the RAW table so both numeric indices and names work
+  # (file inputs expose V1..Vn names; data.frame inputs keep their own).
+  score_vals <- NULL
+  score_label <- NULL
+  if (!is.null(score_col)) {
+    if (is.numeric(score_col)) {
+      if (length(score_col) != 1L || is.na(score_col) ||
+          floor(score_col) != score_col || score_col < 7 || score_col > ncol(tab)) {
+        stop("bedpe_score_col index must be a single integer in [7, ",
+             ncol(tab), "] (columns 1-6 are the coordinates).")
+      }
+      sidx <- as.integer(score_col)
+    } else {
+      cn <- colnames(tab)
+      if (is.null(cn) || length(score_col) != 1L || !score_col %in% cn) {
+        stop(sprintf("bedpe_score_col '%s' not found among BEDPE column names.",
+                     paste(score_col, collapse = ",")), call. = FALSE)
+      }
+      sidx <- match(score_col, cn)
+      if (sidx < 7) {
+        stop("bedpe_score_col must point to an extra column (>= 7); ",
+             "columns 1-6 are the coordinates.")
+      }
+    }
+    score_label <- sprintf("column %d%s", sidx,
+                           if (!is.null(colnames(tab)))
+                             paste0(" (", colnames(tab)[sidx], ")") else "")
+    score_vals <- suppressWarnings(as.numeric(tab[[sidx]]))
+    n_bad <- sum(!is.finite(score_vals))
+    if (n_bad > 0) warning(sprintf(
+      "%d/%d non-finite values in the BEDPE contact-score column were kept as NA.",
+      n_bad, length(score_vals)), call. = FALSE)
+  }
   # P1-6: strict input validation (chrom non-empty, start/end numeric, start>=0,
   # end>start). BEDPE is 0-based half-open.
   for (cc in c(1, 4)) {
@@ -604,10 +876,12 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   sl1 <- as.character(GenomicRanges::seqnames(anchor1))
   seqstyle <- if (length(sl1) > 0 && all(grepl("^chr", sl1))) "UCSC" else "custom/unknown"
   list(gr = anchor1, anchor2 = anchor2, bedpe_id = bedpe_id,
+       score = score_vals,
        provenance = list(file_name = src, record_count = n,
                          column_names = colnames(tab),
                          coordinate_convention = "BEDPE 0-based half-open -> 1-based closed",
                          seqlevel_style = seqstyle,
+                         score_column = score_label,
                          note = paste(
                            "Original BEDPE records are not modified or re-scored;",
                            "bedpe_record_id links derived evidence back to the",
@@ -770,10 +1044,32 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
 #'   convenience default. For VST / rlog / normalized_counts, expressed_first
 #'   requires an explicit user threshold (no universal meaning of 1). For
 #'   \code{"high_expression_first"} no threshold is needed.
+#' @param nearest_tss_cutoff_bp Numeric. Distance (bp) below which a
+#'   \code{nearest_tss} relation is treated as a strong PROXIMAL candidate and
+#'   ranked above \code{gene_body_overlap}/distal links; a currently-nearest
+#'   but FAR TSS (beyond this cutoff) is downgraded to the lowest evidence tier.
+#'   This prevents a "nearest but remote" gene (e.g. 500 kb away) from ranking
+#'   equal to \code{promoter_overlap} evidence. Defaults to the option
+#'   \code{epiPortrait.nearest_tss_cutoff_bp}, or 10000 if unset. This keeps
+#'   \code{annotate_epi_domains()} and \code{get_domain_genes()} on the same
+#'   proximity definition.
 #' @param unique_genes Logical. Collapse to unique genes (default TRUE),
 #'   retaining the highest-priority domain association per gene.
+#' @param rank_by Character. Primary ordering key for \code{candidate_priority}.
+#'   \itemize{
+#'     \item \code{"tier"} (default): evidence hierarchy first (see Details),
+#'           expression as tie-breaker — the original behaviour.
+#'     \item \code{"bedpe_score"}: descending 3D contact strength
+#'           (\code{bedpe_contact_score}) first, then the evidence tier and
+#'           expression as tie-breakers. Requires that
+#'           \code{annotate_epi_domains()} was run with
+#'           \code{bedpe_score_col}; pairs without a usable score fall back to
+#'           the tier ordering. This implements contact-strength-first target
+#'           prioritization (dominant-loop style).
+#'   }
 #' @return A data.frame: domain_id, gene_id, gene_symbol, relation_types,
-#'   bedpe_supported, bedpe_support_count, expression_value,
+#'   bedpe_supported, bedpe_support_count, bedpe_contact_score,
+#'   nearest_tss_distance_bp (when available), expression_value,
 #'   expression_status, expression_rank, candidate_priority.
 #' @examples
 #' data(example_se)
@@ -789,8 +1085,13 @@ get_domain_genes <- function(se, domains = NULL,
                              group = NULL,
                              expression_priority = c("none", "expressed_first",
                                                      "high_expression_first"),
-                             min_expression = NULL, unique_genes = TRUE) {
+                             min_expression = NULL, unique_genes = TRUE,
+                             nearest_tss_cutoff_bp =
+                               getOption("epiPortrait.nearest_tss_cutoff_bp",
+                                         10000),
+                             rank_by = c("tier", "bedpe_score")) {
   expression_priority <- match.arg(expression_priority)
+  rank_by <- match.arg(rank_by)
   # ---- input validation (P1-11) --------------------------------------------
   if (!is.null(domains)) {
     if (length(domains) != nrow(se) || any(is.na(domains))) {
@@ -842,22 +1143,64 @@ get_domain_genes <- function(se, domains = NULL,
 
   # collapse per domain-gene
   key <- paste(links$domain_id, links$gene_id, sep = "|")
-  dd <- unique(key)
-  out <- do.call(rbind, lapply(dd, function(k) {
-    sub <- links[key == k, ]
-    bedpe_sub <- sub[sub$evidence_source == "bedpe", ]
-    data.frame(
-      domain_id = sub$domain_id[1],
-      gene_id = sub$gene_id[1],
-      gene_symbol = if (any(!is.na(sub$gene_symbol))) sub$gene_symbol[!is.na(sub$gene_symbol)][1] else NA_character_,
-      relation_types = paste(sort(unique(sub$relation_type)), collapse = ";"),
-      bedpe_supported = any(sub$evidence_source == "bedpe"),
-      # P1-4: count UNIQUE BEDPE records (a single record may match via both
-      # directions -> two rows; must not be double counted).
-      bedpe_support_count = if (nrow(bedpe_sub) > 0)
-        length(unique(stats::na.omit(bedpe_sub$bedpe_record_id))) else 0L,
-      stringsAsFactors = FALSE)
+  # Vectorised with split (single pass) instead of a per-pair rbind loop,
+  # so it scales to 10^5-10^6 links (benchmark 2026-08-21).
+  sp <- split(seq_len(nrow(links)), key)
+  rel_collapse <- function(field) unlist(lapply(sp, function(i) {
+    paste(sort(unique(links[[field]][i])), collapse = ";")
   }))
+  relation_types <- rel_collapse("relation_type")
+  dom_part  <- sub("\\|.*$", "", names(sp))
+  gene_part <- sub("^[^\\|]*\\|", "", names(sp))
+  symbol_of <- function(i) {
+    s <- links$gene_symbol[i]; s[!is.na(s)][1]
+  }
+  bedpe_of <- function(i) {
+    b <- links$evidence_source[i] == "bedpe"
+    if (!any(b)) return(0L)
+    length(unique(stats::na.omit(links$bedpe_record_id[i][b])))
+  }
+  # pair-level contact score: sum over UNIQUE supporting records (0 when the
+  # pair has no BEDPE evidence; NA when evidence exists but scores are absent,
+  # e.g. objects annotated without bedpe_score_col).
+  has_score_col <- "contact_score" %in% colnames(links)
+  bedpe_score_of <- function(i) {
+    b <- which(links$evidence_source[i] == "bedpe" &
+                 !is.na(links$bedpe_record_id[i]))
+    if (!has_score_col || length(b) == 0) return(0)
+    s <- links$contact_score[i][b]
+    s <- s[!duplicated(links$bedpe_record_id[i][b])]
+    if (all(is.na(s))) return(NA_real_)
+    sum(s, na.rm = TRUE)
+  }
+  dist_min <- function(i) {
+    d <- suppressWarnings(min(stats::na.omit(links$distance_to_tss_bp[i])))
+    if (!is.finite(d)) NA_real_ else d
+  }
+  out <- data.frame(
+    domain_id = dom_part,
+    gene_id   = gene_part,
+    gene_symbol = vapply(sp, symbol_of, character(1)),
+    relation_types = relation_types,
+    bedpe_supported = vapply(sp, function(i) any(links$evidence_source[i] == "bedpe"), logical(1)),
+    # P1-4: count UNIQUE BEDPE records (a single record may match via both
+    # directions -> two rows; must not be double counted).
+    bedpe_support_count = vapply(sp, bedpe_of, integer(1)),
+    bedpe_contact_score = vapply(sp, bedpe_score_of, numeric(1)),
+    # P1-4: closest (minimum absolute) TSS distance across all linear links of
+    # the pair. Only nearest_tss rows carry distance_to_tss_bp; for pairs
+    # without any nearest_tss row this stays NA. Used to grade nearest_tss
+    # evidence by proximity (a far "nearest" gene must not outrank a
+    # promoter-overlapping one).
+    nearest_tss_distance_bp = vapply(sp, dist_min, numeric(1)),
+    stringsAsFactors = FALSE)
+  # NA symbol: fall back to any symbol lookup across all rows
+  na_sym <- which(is.na(out$gene_symbol))
+  if (length(na_sym) > 0) {
+    sym_map <- stats::setNames(links$gene_symbol, links$gene_id)
+    out$gene_symbol[na_sym] <- sym_map[out$gene_id[na_sym]]
+  }
+  rownames(out) <- NULL
 
   # expression integration
   out$expression_value <- NA_real_
@@ -882,20 +1225,35 @@ get_domain_genes <- function(se, domains = NULL,
     }
   }
 
-  # ordinal prioritization (design §57-61): evidence hierarchy first, then
-  # expression as secondary. Use pmax() so the strongest evidence is NEVER
+  # ordinal prioritization (design §57-61, revised): evidence hierarchy first,
+  # then expression as secondary. Use pmax() so the strongest evidence is NEVER
   # overwritten by a weaker relation on the same domain-gene pair (P0-8).
-  order_score <- rep(1L, nrow(out))
-  order_score <- pmax(order_score,
-                      ifelse(grepl("gene_body_overlap|fully_contained",
-                                   out$relation_types), 1L, 1L))
-  order_score <- pmax(order_score,
-                      ifelse(grepl("nearest_tss", out$relation_types), 2L, 1L))
-  order_score <- pmax(order_score,
-                      ifelse(grepl("promoter_overlap", out$relation_types), 2L, 1L))
-  order_score <- pmax(order_score,
-                      ifelse(grepl("bedpe_promoter_contact", out$relation_types),
-                             3L, 1L))
+  # Revised hierarchy (2026-08): a nearest-but-FAR TSS must not rank equal to a
+  # promoter-overlapping one. Promoter overlap (TSS inside/at the domain) is now
+  # the strongest linear evidence; nearest_tss is graded by proximity against
+  # nearest_tss_cutoff_bp (proximal ranks above gene-body links, distal drops to
+  # the lowest tier).
+  has_promoter  <- grepl("promoter_overlap", out$relation_types)
+  has_bedpe     <- grepl("bedpe_promoter_contact", out$relation_types)
+  has_nearest   <- grepl("nearest_tss", out$relation_types)
+  has_body      <- grepl("gene_body_overlap|fully_contained", out$relation_types)
+  nearest_dist  <- abs(out$nearest_tss_distance_bp)
+  near_nearest  <- has_nearest & is.finite(nearest_dist) &
+                   nearest_dist <= nearest_tss_cutoff_bp
+  # Note: "far nearest-TSS" (has_nearest & !near_nearest) needs no explicit
+  # variable - it is intentionally absorbed by tier 0 (order_score stays 0), so
+  # a distal nearest gene ranks below gene-body links rather than equal to them.
+
+  order_score <- rep(0L, nrow(out))
+  # Tier 4: promoter overlap (strongest linear evidence)
+  order_score <- pmax(order_score, ifelse(has_promoter, 4L, 0L))
+  # Tier 3: BEDPE promoter contact (3D evidence)
+  order_score <- pmax(order_score, ifelse(has_bedpe, 3L, 0L))
+  # Tier 2: proximal nearest-TSS (strong linear proximity)
+  order_score <- pmax(order_score, ifelse(near_nearest, 2L, 0L))
+  # Tier 1: gene-body overlap / fully contained
+  order_score <- pmax(order_score, ifelse(has_body, 1L, 0L))
+  # Tier 0: far nearest-TSS (nearest but remote) and anything else
   # secondary: expression
   expr_tie <- rep(0, nrow(out))
   if (expression_priority == "expressed_first") {
@@ -904,7 +1262,17 @@ get_domain_genes <- function(se, domains = NULL,
     expr_tie <- ifelse(is.na(out$expression_value), 0, out$expression_value)
   }
   # P0-7: order() returns the permutation; assign ranks correctly.
-  ord <- order(order_score, expr_tie, decreasing = TRUE, na.last = TRUE)
+  # rank_by = "bedpe_score": contact STRENGTH is the primary key (dominant-
+  # loop style prioritization); pairs without a usable score (-Inf) fall back
+  # to the evidence-tier ordering among themselves.
+  if (rank_by == "bedpe_score") {
+    sc_key <- out$bedpe_contact_score
+    sc_key[is.na(sc_key)] <- -Inf
+    ord <- order(sc_key, order_score, expr_tie, decreasing = TRUE,
+                 na.last = TRUE)
+  } else {
+    ord <- order(order_score, expr_tie, decreasing = TRUE, na.last = TRUE)
+  }
   priority <- integer(nrow(out))
   priority[ord] <- seq_along(ord)
   out$candidate_priority <- priority

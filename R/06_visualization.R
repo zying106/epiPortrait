@@ -108,7 +108,7 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
     plot_df$Type_Label <- factor(plot_df$Type_Label,
                                  levels = c(display_label, "Typical"))
     plot_df$SYMBOL <- plot_df$Peak_ID
-    pal <- stats::setNames(c("#D55E00", "#B8B8B8"),
+    pal <- stats::setNames(c("#0072B2", "#B8B8B8"),
                            c(display_label, "Typical"))
 
     p <- ggplot(plot_df, aes(x = Rank, y = Value, color = Type_Label)) +
@@ -214,10 +214,15 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
                                       ifelse(plot_df$Type == typical_type, "Typical", "Uncertain")))
   plot_df$Type_Label <- factor(plot_df$Type_Label,
                                levels = c(display_label, "Typical", "Uncertain"))
-  # Super point colour: blue for Intensity hockey-stick plots (the class colour
-  # for intensity-extreme domains), orange elsewhere (Breadth keeps the default
-  # palette so the width curve stays visually distinct).
-  super_col <- if (feature == "Intensity") "#0072B2" else "#D55E00"
+  # Super point colour: match the package publication palette so every plot
+  # assigns the same biological class the same colour (Intensity = orange,
+  # Breadth/Width = blue, SignalDispersion = green).
+  super_col <- switch(feature,
+                      "Intensity"      = "#D55E00",
+                      "Breadth"        = "#0072B2",
+                      "Width"          = "#0072B2",
+                      "SignalDispersion" = "#009E73",
+                      "#D55E00")
   pal <- c(stats::setNames(c(super_col, "#B8B8B8", "#666666"),
                            c(display_label, "Typical", "Uncertain")))
 

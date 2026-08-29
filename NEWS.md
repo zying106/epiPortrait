@@ -1,6 +1,81 @@
 Changes in version 0.99.0 (2026-08-10)
 ---------------------------------------
 
+Cross-mark integration and per-sample transitions (2026-08-26)
+
+* New `integrate_cross_mark(se_a, se_b, ...)`: overlays the per-sample
+  super-domain calls of object B onto the (possibly DIFFERENT) domain
+  universe of object A. Each object A domain is classified from the
+  object B calls of the object B domains that overlap it (`any_super` or
+  `majority` aggregation, optional `min_overlap_bp`). Enables the two-axis
+  design (e.g. enhancer-mark Intensity on the promoter mark's domains, or
+  boundary-rescue of promoter-proximal enhancers). Adds
+  `<mark_b>_Call__<tp>` + `<mark_b>_NOverlaps__<tp>` rowData columns, a
+  long-format table in `metadata(se_a)$cross_mark_integration`, and
+  provenance in `metadata(se_a)$cross_mark_provenance`.
+* New `transition_matrix_per_sample(se, feature/call_fmt, timepoints,
+  ref)`: pairwise transitions between per-SAMPLE call columns (mode
+  `per_sample`, one sample per time point), which
+  `compare_superdomains()`/`compare_superdomain_classes()` do not support
+  (they need per-GROUP columns). Adds
+  `<prefix>_SampleTransition__<ref>_vs_<target>` rowData columns with
+  `compare_superdomain_classes()`-consistent labels (Persistent_<value> /
+  <from>_to_<to> / Uncertain) and per-pair counts tables in
+  `metadata(se)$transitions`. With `ref = NULL` all ordered time-point
+  pairs are computed.
+
+BEDPE contact-score aggregation in annotate_epi_domains() (2026-08-26)
+
+* New `bedpe_score_col` argument: an optional BEDPE column (integer index
+  >= 7 or column name) holding a per-record contact STRENGTH, e.g. the
+  FitHiChIP TMM-normalized contact frequency. Motivated by real datasets
+  (GSE251898) where the published TMM BEDPE loop SET is identical across
+  conditions and only the score varies — count-based contact integration
+  alone is invariant there by construction.
+* When supplied: `metadata(se)$domain_gene_links$contact_score` carries the
+  per-evidence-row score; the dedup pair table and the annotation summary
+  gain `bedpe_contact_score` (summed over UNIQUE supporting records; domain
+  level = sum over all contacted records); `rowData(se)$bedpe_contact_score`
+  mirrors the domain-level value. `bedpe_provenance$score_column` records
+  what was used.
+* Semantics: no BEDPE evidence -> 0; evidence without usable scores (or runs
+  without `bedpe_score_col`) -> NA, so "no 3D evidence" and "unscored 3D
+  evidence" remain distinguishable.
+* `get_domain_genes()` gains a `bedpe_contact_score` column and a new
+  `rank_by = c("tier", "bedpe_score")` argument: "bedpe_score" prioritizes
+  candidate genes primarily by descending 3D contact strength
+  (dominant-loop-style target assignment), with the evidence tier and
+  expression as tie-breakers.
+* Default behaviour (`bedpe_score_col = NULL`) is unchanged apart from the
+  two new NA-valued columns.
+
+Statistical hardening of analyze_differential_domains() (2026-08-23)
+
+* `analyze_differential_domains()` now fits the limma mean-variance trend by
+  default (`trend = TRUE`): integrated intensity exhibits a strong
+  mean-variance dependence across domains, and without the trend low-signal
+  domains were over-called as significant. The trend is disabled automatically
+  with a warning when fewer than 20 domains pass `min_signal` filtering.
+* New `robust = FALSE` argument exposes limma's robust empirical-Bayes
+  moderation for outlier-resistant inference.
+* Both settings are recorded in `metadata(se)$differential_domains`
+  provenance; invalid values are rejected.
+* Documented the scale-dependence of the log(x + 1) pseudo-count offset
+  (CPM vs RPGC vs spike-in units) and its interaction with `min_signal`.
+* `eBayes(trend = TRUE)` changes P-values slightly relative to previous
+  releases; re-run differential analyses after upgrading.
+* Bug fix: a two-element character `contrast` (coefficient-name pair,
+  documented as `coef1 - coef2`) was silently ignored and the uncontrasted
+  fit was returned. It is now converted to numeric contrast weights, with a
+  clear error when a name does not match a design coefficient. Supplying
+  `design` without any `contrast` is now also rejected instead of silently
+  returning an uncontrasted fit.
+* Bug fix: a user-supplied formula `design` (e.g. `~ Condition` or
+  `~ 0 + Condition`) crashed inside limma with an obscure internal error,
+  because the formula object was passed to `lmFit()` unconverted. Formulas
+  are now materialized with `model.matrix()` on colData before fitting, so
+  custom paired/batched designs are actually usable.
+
 Expert review fixes (2026-08-14)
 
 * normalize_portrait(): the completion message no longer uses a sprintf()

@@ -12,6 +12,7 @@ annotate_epi_domains(
   promoter_upstream = 3000,
   promoter_downstream = 3000,
   bedpe = NULL,
+  bedpe_score_col = NULL,
   expression = NULL,
   expression_type = NULL,
   aggregate_fun = "median",
@@ -38,6 +39,21 @@ TxDb object. For non-built-in species supply \code{txdb}.}
 \code{bedpe_promoter_contact} evidence is added (3D promoter-contact);
 records are read-only (no calling / filtering / merging).}
 
+\item{bedpe_score_col}{Numeric or character or NULL. Optional column holding
+a per-record contact STRENGTH (e.g. the FitHiChIP TMM-normalized contact
+frequency in column 8). Integer column index (>= 7; columns 1-6 are the
+coordinates) or a column name (file inputs expose V1..Vn names; a
+data.frame input can carry arbitrary names). When given, three quantitative
+outputs are produced IN ADDITION to the count-based evidence:
+\code{metadata(se)$domain_gene_links$contact_score} (per evidence row),
+\code{bedpe_contact_score} in the dedup table (summed over the UNIQUE
+supporting records of the pair), and \code{bedpe_contact_score} in the
+annotation summary (summed over the unique records of the domain).
+Rationale: FitHiChIP-style TMM BEDPEs often share an identical loop SET
+across conditions and vary only in score, so count-based integration alone
+cannot capture contact dynamics. NULL (default) keeps the previous
+count-only behaviour unchanged.}
+
 \item{expression}{A gene-level expression object: a wide matrix (genes x
 samples), a long data.frame (gene_id, SampleID, Condition, expression), or
 NULL.}
@@ -56,9 +72,22 @@ using other ID systems such as ENSEMBL / TAIR / FlyBase).}
 \code{se} with rowData columns: primary_genomic_context,
 nearest_tss_gene_id, nearest_tss_gene_symbol, nearest_tss_distance_bp,
 promoter_overlap_gene_count, gene_body_overlap_gene_count,
-fully_contained_gene_count; metadata(se)$domain_gene_links,
-metadata(se)$annotation_provenance, and (if provided)
-metadata(se)$bedpe_provenance / metadata(se)$expression_provenance.
+fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score
+(only when \code{bedpe_score_col} is given), and
+top_candidate_gene_symbol; the annotation result is also exposed as a
+three-level structure in metadata:
+\itemize{
+\item \code{metadata(se)$annotation_summary} — ONE ROW PER DOMAIN master
+table (nearest gene, per-evidence overlap/gene counts, number of
+BEDPE-contacted genes, and a representative top candidate gene).
+\item \code{metadata(se)$domain_gene_links_dedup} — ONE ROW PER
+domain-gene pair, with summarised \code{relation_types},
+\code{evidence_sources} and a \code{best_relation} label.
+\item \code{metadata(se)$domain_gene_links} — raw per-relationship
+detail (for auditing).
+}
+\code{metadata(se)$annotation_provenance}, and (if provided)
+\code{metadata(se)$bedpe_provenance} / \code{metadata(se)$expression_provenance}.
 }
 \description{
 Annotates the final shared domains (not individual peaks) with

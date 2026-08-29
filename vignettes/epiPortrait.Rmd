@@ -567,6 +567,44 @@ unlink(f)
 unlink(outdir, recursive = TRUE)
 ```
 
+## 5.7 Differential domain analysis on continuous signal
+
+Where `compare_superdomains()` reports relative *state* transitions between
+discrete phenotypes, `analyze_differential_domains()` adds a statistical
+*P-value* for a continuous signal change between condition groups, computed
+directly on the integrated BigWig intensity with limma:
+
+```{r differential}
+se_diff <- analyze_differential_domains(
+  se_viz, feature = "Intensity",
+  ref_group = "Control", target_group = "Treatment")
+table(rowData(se_diff)$Intensity_DiffStatus)   # Gain / Loss / NS
+```
+
+Arbitrary designs (paired, batch-corrected, multi-factor) are supported via
+`design` + `contrast`:
+
+```{r differential2, eval=FALSE}
+se_diff <- analyze_differential_domains(
+  se_diff, feature = "Intensity",
+  design  = ~ 0 + Condition + Batch,
+  contrast = c(ConditionTreatment = "ConditionTreatment", ...))
+```
+
+The volcano view uses the package publication palette and can label the top
+domains:
+
+```{r differential-viz}
+plot_differential_volcano(se_diff, feature = "Intensity", label_n = 5)
+```
+
+**Scope caveat.** The test is on log-transformed integrated continuous signal
+(not raw fragment counts) — a defensible approximation for BigWig-native
+workflows. It requires >=2 replicates per group (limma residual-variance
+estimation). For exact DESeq2/DiffBind-style count statistics, obtain
+per-domain counts externally; epiPortrait provides the coordinate universe and
+the continuous phenotype layer for that workflow.
+
 # Module 6: Mark-Specific Interpretation
 
 The quantitative engine is mark-independent: every mark is measured on the

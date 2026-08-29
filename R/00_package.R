@@ -61,5 +61,6 @@ utils::globalVariables(c(
   "Intensity", "Breadth", "Class", "Label",
   "From", "To", "Level", "Status", "N",
   "Occ_Start", "Occ_End",
-  "Cause", "Freq", "Prop", "LabelY", "Frac", "FillKey"
+  "Cause", "Freq", "Prop", "LabelY", "Frac", "FillKey",
+  "logFC", "negLog10P"
 ))

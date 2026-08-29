@@ -33,9 +33,11 @@ Description: epiPortrait is a replicate-aware computational framework for
     Breadth-Super, Dual-Super, Typical, or Uncertain domain states without
     using the consensus-domain width as the breadth caller. The package
     further supports condition transitions, continuous domain-width
-    remodeling, signal quality control, genome-aware domain annotation,
-    optional BEDPE contact evidence, expression-aware candidate-gene
-    prioritization, and publication-oriented visualization.
+    remodeling, signal quality control, genome-aware domain annotation with a
+    three-level export (per-domain summary, per-domain-gene pair, and raw
+    relationship detail), optional BEDPE contact evidence, expression-aware
+    candidate-gene prioritization, differential domain analysis on continuous
+    BigWig signal (limma), and publication-oriented visualization.
 License: GPL (>= 3) + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
