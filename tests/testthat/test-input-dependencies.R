@@ -1,7 +1,3 @@
-# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
-#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
-#   skipped there. All other platforms run them in full.
-skip_on_os("windows")
 
 # Input-dependency and replicate-aware evidence-chain tests (design
 # discussion 2026-08-13). These lock down the CURRENT behaviour — no code
@@ -18,6 +14,10 @@ data(example_se)
 
 # ---- 1. candidate universe + single-sample Intensity ------------------------
 test_that("single-sample Intensity-only runs with candidate universe only", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
@@ -42,6 +42,10 @@ test_that("single-sample Intensity-only runs with candidate universe only", {
 })
 
 test_that("single-sample Breadth errors without peak_path (current behaviour)", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
@@ -61,6 +65,10 @@ test_that("single-sample Breadth errors without peak_path (current behaviour)", 
 
 # ---- 2. multi-sample Intensity does not need peak_path ----------------------
 test_that("multi-sample Intensity runs without per-sample native peaks", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 

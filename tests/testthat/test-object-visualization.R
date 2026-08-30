@@ -1,7 +1,3 @@
-# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
-#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
-#   skipped there. All other platforms run them in full.
-skip_on_os("windows")
 
 # Tests for the object-contract accessors/export and the academic
 # visualization suite (2026-08-08 design docs).
@@ -192,6 +188,10 @@ test_that("plot_hockey_stick consensus shows Uncertain class", {
 })
 
 test_that("plot_peak_track show_native_occupancy overlays span", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   samples <- data.frame(SampleID = c("C1", "C2"), Condition = c("Control", "Control"),
@@ -244,6 +244,10 @@ test_that("plot_hockey_stick label_genes labels top super-domains", {
 })
 
 test_that("plot_peak_track renders with NA native occupancy (no peak_path)", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   # sample sheet without peak_path -> NativeOccupiedWidth is all NA

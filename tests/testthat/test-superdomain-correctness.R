@@ -1,7 +1,3 @@
-# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
-#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
-#   skipped there. All other platforms run them in full.
-skip_on_os("windows")
 
 # Scientific-correctness tests for the fixes from the deep review (2026-08-08)
 # and the v1.0 metric redesign (2026-08-09). These go beyond "returns a
@@ -78,6 +74,10 @@ test_that("no-call / NA propagates to Uncertain in combined taxonomy", {
 
 # ---- P1-9 / 17.5: duplicate Domain_IDs must not silently mis-map ------------
 test_that("build_portrait_matrix enforces unique domain IDs", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found (source checkout?)")
 
@@ -132,6 +132,7 @@ test_that("example_se SignalDispersion is finite", {
 
 # ---- P1-1: check_signal_compatibility validates input ----------------------
 test_that("check_signal_compatibility rejects bad sample sheets", {
+  # pure input validation: no BigWig I/O, runs on all platforms
   expect_error(check_signal_compatibility(data.frame(x = 1:3)), "bw_path")
 })
 
@@ -409,6 +410,10 @@ test_that("min_valid_replicates NULL auto-resolves (Super + no_call is Uncertain
 
 # ---- P0-A: cache is not polluted by negative_policy -------------------------
 test_that("cache stores raw coverage (clip_zero then error still errors)", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
@@ -467,6 +472,10 @@ test_that(".classify_vs_cutoff honors tie_policy and keeps NA", {
 
 # ---- freeze review 2026-08-11: entry-point validation ------------------------
 test_that("build_portrait_matrix rejects duplicate / empty SampleID and NA Condition", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 100))
   dup <- data.frame(SampleID = c("A", "A"), Condition = c("C", "C"),
                     bw_path = c("x", "x"), stringsAsFactors = FALSE)

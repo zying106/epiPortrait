@@ -1,7 +1,3 @@
-# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
-#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
-#   skipped there. All other platforms run them in full.
-skip_on_os("windows")
 
 # Tests for the heterochromatin / broad-repressive mark compatibility layer
 # (plan 2026-08-10): mark-aware presets, display terminology, and the
@@ -120,6 +116,10 @@ test_that("unknown mark falls back to generic preset with warning", {
 })
 
 test_that("domain provenance is recorded when sample_sheet carries caller info", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   # build with a tiny BigWig-only sheet carrying domain_source metadata
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")

@@ -1,7 +1,3 @@
-# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
-#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
-#   skipped there. All other platforms run them in full.
-skip_on_os("windows")
 
 data(example_se)
 
@@ -36,6 +32,10 @@ test_that("plot_hockey_stick points per_group users to the group argument", {
 })
 
 test_that("plot_peak_track returns ggplot on real BigWig", {
+  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
+  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
+  # that does not read BigWigs is still executed on Windows.
+  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found (source checkout?)")
   samples <- data.frame(
