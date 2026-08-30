@@ -1,3 +1,8 @@
+# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
+#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
+#   skipped there. All other platforms run them in full.
+skip_on_os("windows")
+
 # Integration test running the full core pipeline on the tiny synthetic BigWig
 # dataset shipped in inst/extdata (Bioconductor reviewer expectation: the real
 # BigWig import path must be exercised by unit tests).

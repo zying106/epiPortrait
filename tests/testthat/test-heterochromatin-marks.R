@@ -1,3 +1,8 @@
+# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
+#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
+#   skipped there. All other platforms run them in full.
+skip_on_os("windows")
+
 # Tests for the heterochromatin / broad-repressive mark compatibility layer
 # (plan 2026-08-10): mark-aware presets, display terminology, and the
 # continuous width expansion/contraction descriptor.

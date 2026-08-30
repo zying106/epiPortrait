@@ -1,3 +1,8 @@
+# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
+#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
+#   skipped there. All other platforms run them in full.
+skip_on_os("windows")
+
 # Tests for check_signal_compatibility (07_qc_signal.R) — previously the
 # lowest-coverage module (4.2%). Covers the regions path, genome-tiles path,
 # metadata compatibility, scale-ratio warning, and negative-signal status.

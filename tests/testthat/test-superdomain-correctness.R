@@ -1,3 +1,8 @@
+# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
+#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
+#   skipped there. All other platforms run them in full.
+skip_on_os("windows")
+
 # Scientific-correctness tests for the fixes from the deep review (2026-08-08)
 # and the v1.0 metric redesign (2026-08-09). These go beyond "returns a
 # ggplot" and verify the actual semantics.

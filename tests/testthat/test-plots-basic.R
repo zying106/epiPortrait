@@ -1,3 +1,8 @@
+# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
+#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
+#   skipped there. All other platforms run them in full.
+skip_on_os("windows")
+
 data(example_se)
 
 test_that("plot_hockey_stick returns ggplot", {

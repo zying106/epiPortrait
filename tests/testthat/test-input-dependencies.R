@@ -1,3 +1,8 @@
+# rtracklayer BigWig reads fail on Windows ('UCSC library operation failed',
+#   rtracklayer#52/#62/#128/#151), so true-BigWig integration tests are
+#   skipped there. All other platforms run them in full.
+skip_on_os("windows")
+
 # Input-dependency and replicate-aware evidence-chain tests (design
 # discussion 2026-08-13). These lock down the CURRENT behaviour — no code
 # change was made:
