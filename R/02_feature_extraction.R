@@ -280,11 +280,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         n_batches <- ceiling(num_peaks / batch_size)
         for (b in seq_len(n_batches)) {
           idx <- ((b - 1) * batch_size + 1):min(b * batch_size, num_peaks)
-          cvg_b <- rtracklayer::import(
-            bw_path,
-            selection = rtracklayer::BigWigSelection(consensus_peaks[idx]),
-            as = "NumericList"
-          )
+          cvg_b <- .import_bw_views(bw_path, consensus_peaks[idx])
           # Count negatives BEFORE sanitization so the fraction reflects the
           # raw input (P0-1); error policy throws inside .sanitize_signal.
           batch_neg[idx] <- vapply(cvg_b, function(x) sum(x < 0, na.rm = TRUE), integer(1))
@@ -345,10 +341,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         for (fn_name in names(custom_features)) {
           fn <- custom_features[[fn_name]]
           custom_result[[fn_name]] <- vapply(seq_len(num_peaks), function(k) {
-            cvg_k <- rtracklayer::import(
-              bw_path,
-              selection = rtracklayer::BigWigSelection(consensus_peaks[k]),
-              as = "NumericList")[[1]]
+            cvg_k <- .import_bw_views(bw_path, consensus_peaks[k])[[1]]
             x_clean <- .sanitize_signal(as.numeric(cvg_k), negative_policy = negative_policy)
             x_clean <- x_clean[!is.na(x_clean)]
             if (length(x_clean) >= 3) fn(x_clean) else NA_real_
@@ -568,6 +561,46 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   message(sprintf("Success: Portrait Matrix built with %d assays (On-disk = %s).",
                   length(mat_list), on_disk))
   return(se)
+}
+
+
+# Import per-region BigWig coverage as a NumericList of full-length per-base
+# vectors, using the GRanges (sparse) import path rather than `as="NumericList"`.
+#
+# Rationale (2026-08-29, Windows CI): rtracklayer's `import(..., as="NumericList")`
+# routes through `BWGFile_query(..., as_numericlist = TRUE)`, which raises
+# "UCSC library operation failed" on the Windows binary. The default GRanges
+# path (`import.bw(con, which = ...)`, i.e. `as="GRanges"`) works on all
+# platforms and returns the variable-width bins as single-base (width-1) ranges
+# carrying the bin score at the bin start. We expand those sparse bins back to
+# a full-length per-base vector per region (score at `start - region_start + 1`,
+# 0 elsewhere), reproducing the exact numeric semantics of `as="NumericList"`
+# while staying Windows-compatible.
+.import_bw_views <- function(bw_path, regions) {
+  sparse <- rtracklayer::import.bw(bw_path, which = regions)
+  region_w <- GenomicRanges::width(regions)
+  region_start <- GenomicRanges::start(regions)
+  views <- lapply(seq_len(length(regions)), function(i) {
+    rep(0, region_w[i])
+  })
+  if (length(sparse) > 0) {
+    ov <- GenomicRanges::findOverlaps(sparse, regions)
+    qh <- S4Vectors::queryHits(ov)
+    sh <- S4Vectors::subjectHits(ov)
+    # a sparse bin spans width(sparse)[qh] bp and carries the bin score at
+    # every covered base (matching the `as="NumericList"` expansion); clip to
+    # the region boundary so a bin straddling two regions is split correctly.
+    bin_start <- GenomicRanges::start(sparse)[qh]
+    bin_end   <- GenomicRanges::end(sparse)[qh]
+    score     <- S4Vectors::mcols(sparse)$score[qh]
+    for (j in seq_along(sh)) {
+      lo <- max(bin_start[j], region_start[sh[j]]) - region_start[sh[j]] + 1L
+      hi <- min(bin_end[j], region_start[sh[j]] + region_w[sh[j]] - 1L) -
+        region_start[sh[j]] + 1L
+      if (lo <= hi) views[[sh[j]]][lo:hi] <- score[j]
+    }
+  }
+  IRanges::NumericList(views)
 }
 
 
