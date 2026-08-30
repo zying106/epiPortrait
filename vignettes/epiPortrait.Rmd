@@ -605,6 +605,83 @@ estimation). For exact DESeq2/DiffBind-style count statistics, obtain
 per-domain counts externally; epiPortrait provides the coordinate universe and
 the continuous phenotype layer for that workflow.
 
+## 5.8 Score-aware BEDPE/3D annotation
+
+BEDPE contact evidence can be attached two ways. The default is contact-only:
+any record linking a domain anchor to a gene promoter counts toward that
+domain-gene pair. In many HiChIP pipelines (e.g. FitHiChIP TMM output), however,
+the loop *set* is shared across conditions and only the per-record **score**
+(contact frequency) varies with the perturbation. Collapsing scores to binary
+contact flags then discards the quantitative dynamics. Passing
+`bedpe_score_col` keeps the strength. This small self-contained example builds
+a synthetic `SummarizedExperiment` over two tiny hg38-like genes, with two BEDPE
+records (scores 12.3 and 8.9) bridging domain 1 to the gene-2 promoter:
+
+```{r bedpe-score}
+gids  <- c("gene1", "gene2")
+gmod  <- GRanges(rep("chr1", 4),
+                 IRanges(c(1000, 1000, 20000, 20000),
+                         c(3000, 3000, 26000, 26000)),
+                 strand = rep(c("+", "-"), each = 2))
+mcols(gmod)$type   <- rep(c("gene", "transcript"), 2)
+mcols(gmod)$ID     <- c(rbind(gids, paste0(gids, "_tx1")))
+mcols(gmod)$Parent <- c(rbind(rep(NA, 2), gids))
+txdb <- txdbmaker::makeTxDbFromGRanges(gmod)
+
+se_small <- SummarizedExperiment(
+  assays  = list(Intensity = matrix(1, 3, 2)),
+  rowRanges = GRanges("chr1", IRanges(c(1500, 21000, 35000), c(5000, 30000, 90000))))
+rownames(se_small) <- paste0("epiDomain_", 1:3)
+colnames(se_small) <- c("C1", "T1")
+
+bedpe_df <- data.frame(
+  chrom1 = "chr1", start1 = 1499,  end1 = 2500,   # inside epiDomain_1
+  chrom2 = "chr1", start2 = 21999, end2 = 23000,  # gene2 promoter anchor
+  score  = c(12.3, 8.9),                           # two records -> summed, not maxed
+  stringsAsFactors = FALSE)
+se_bp <- annotate_epi_domains(se_small, genome = txdb,
+                              bedpe = bedpe_df, bedpe_score_col = "score")
+rowData(se_bp)$bedpe_contact_score                  # per-domain summed score
+get_domain_genes(se_bp, rank_by = "bedpe_score")    # dominant-loop-first prioritization
+```
+
+- `bedpe_score_col` accepts a numeric column index (>= 7) or a column name.
+- Scores are summed over **unique** supporting records per domain-gene pair
+  (by record id, not score value — TMM scores are often quantized and repeat).
+- Semantics: no BEDPE evidence → `0`; evidence without a usable score (or a run
+  without `bedpe_score_col`) → `NA`, so "no 3D evidence" and "unscored 3D
+  evidence" stay distinguishable.
+- `get_domain_genes(rank_by = "bedpe_score")` prioritizes candidate genes by
+  descending contact strength (dominant-loop-style assignment), with the
+  evidence tier and expression as tie-breakers.
+
+## 5.9 Per-sample time-course transitions
+
+`compare_superdomain_classes()` requires per-*group* call columns. In
+time-course designs with one sample per condition (e.g. 0 min / 30 min / 4 h /
+16 h / 72 h), call in `per_sample` mode and use
+`transition_matrix_per_sample()` to tabulate pairwise transitions. With the
+simulated `example_se` the "samples" are Control_1..3 / Treatment_1..3; a
+single reference sample demonstrates the ref-to-target form:
+
+```{r per-sample-transitions}
+se_ps <- call_super_domains(example_se, feature = "Intensity",
+                            mode = "per_sample", verbose = FALSE)
+# ref = one sample (time point); all others are targets
+#   a real time course would pass e.g. ref = "0m", timepoints = c("0m","30m","4h","16h","72h")
+se_ps <- transition_matrix_per_sample(se_ps, feature = "Intensity",
+                                      ref = "Control_1",
+                                      timepoints = colnames(example_se),
+                                      verbose = FALSE)
+names(S4Vectors::metadata(se_ps)$transitions)   # one entry per (ref, target) pair
+head(rowData(se_ps)$Intensity_SampleTransition__Control_1_vs_Treatment_1)
+```
+
+Labels match `compare_superdomain_classes()` semantics:
+`Persistent_<state>`, `<from>_to_<to>`, and `Uncertain` when either time point
+has a no-call / unreliable call. Omit `ref` to compute all ordered time-point
+pairs.
+
 # Module 6: Mark-Specific Interpretation
 
 The quantitative engine is mark-independent: every mark is measured on the
@@ -663,7 +740,38 @@ permissive support rule (e.g. `min_replicate_support` tuned to the intended
 recurrence threshold, or `support_rule = "all"` when each condition has a
 single patient).
 
-## 6.5 Interpretation guardrails
+## 6.5 Cross-mark integration: two axes from two mark-specific objects
+
+A single SE carries one mark. When the biological question needs both axes —
+e.g. H3K27ac Intensity-Super enhancers *and* H3K4me3 Breadth-Super promoters —
+the two objects **need not share the same domain universe** (different
+stitching, different promoter filtering). `integrate_cross_mark()` overlays the
+second mark's per-sample calls onto the first mark's domains:
+
+```{r cross-mark, eval=FALSE}
+# se_h3k27ac carries Intensity_Call__<tp>; se_h3k4me3 carries Breadth_Call__<tp>
+se_h3k4me3 <- integrate_cross_mark(
+  se_h3k4me3, se_h3k27ac,                        # left: promoter domains annotated
+  call_fmt_a = "Breadth_Call__%s",               #    by the enhancer-mark calls
+  call_fmt_b = "Intensity_Call__%s",
+  mark_a = "Breadth", mark_b = "Intensity",
+  timepoints = c("0m", "30m", "4h", "16h", "72h"),
+  aggregate_ov = "any_super")                    # Super if any overlapping b-domain is Super
+rowData(se_h3k4me3)$Intensity_Call__4h           # <mark_b>_Call__<tp> added
+rowData(se_h3k4me3)$Intensity_NOverlaps__4h      # # overlapping H3K27ac domains (0 = outside)
+```
+
+- `aggregate_ov`: `"any_super"` (any overlapping B domain is super) or
+  `"majority"` (strict > half of the non-NA overlapping calls are super).
+- `min_overlap_bp`: require at least this many overlapping base pairs.
+- Domains with no overlap in B stay `NA` for the overlaid call, flagging the
+  two-universe "boundary" regions (e.g. promoter-proximal enhancers that the
+  enhancer-mark pipeline's ROSE-style promoter filter deliberately excludes).
+- This enables the two-axis boundary-rescue workflow: promoter-proximal
+  regions absent from an enhancer-mark universe can still be assessed on the
+  promoter-mark's breadth axis.
+
+## 6.6 Interpretation guardrails
 
 | Claim | Requirement / caveat |
 |:------|:----------------------|
@@ -675,7 +783,7 @@ single patient).
 | Cohort support | Independent patients are recurrence evidence, not conventional experimental replicates |
 | Transition | Default `"relative"` scope is a rank-state change, not absolute biochemical gain/loss |
 
-## 6.6 Input compatibility and parameter guidance
+## 6.7 Input compatibility and parameter guidance
 
 `epiPortrait` expects **normalized** BigWig files that share the same genome
 build, bin size, and normalization strategy (e.g., RPGC-, CPM-, or
@@ -688,7 +796,7 @@ coverage across the analyzed region set and check the
 `ZeroFraction` / `NegativeFraction` QC columns from
 `check_signal_compatibility()`.
 
-### 6.6.1 Mark-aware preset workflow (e.g. H3K27me3)
+### 6.7.1 Mark-aware preset workflow (e.g. H3K27me3)
 
 `get_mark_preset()` is a configuration helper: it returns mark-appropriate
 defaults (for broad repressive marks, `stitch_distance = 0`, i.e. no extra
@@ -722,7 +830,7 @@ plot_domain_landscape(se, group = "Control", mark = "H3K27me3")
 The internal classes remain `Intensity-Super` / `Breadth-Super` /
 `Dual-Super`; the `mark` argument only changes surface labels.
 
-## 6.7 Parameter guidance
+## 6.8 Parameter guidance
 
 - Start with `method = "elbow"` (default) for the main analysis; use
   `method = "tangent"` with `log_transform = FALSE` only for an optional

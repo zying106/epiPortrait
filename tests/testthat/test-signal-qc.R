@@ -3,7 +3,6 @@
 # metadata compatibility, scale-ratio warning, and negative-signal status.
 
 test_that("check_signal_compatibility with regions returns PASS and ratio", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
@@ -19,7 +18,6 @@ test_that("check_signal_compatibility with regions returns PASS and ratio", {
 })
 
 test_that("check_signal_compatibility metadata inconsistency warns", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
@@ -33,7 +31,6 @@ test_that("check_signal_compatibility metadata inconsistency warns", {
 })
 
 test_that("check_signal_compatibility scale-ratio warning fires for large ratio", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
@@ -50,7 +47,6 @@ test_that("check_signal_compatibility scale-ratio warning fires for large ratio"
 })
 
 test_that("check_signal_compatibility negative signal -> WARNING/FAIL status", {
-  skip_on_os("windows")
   # A track with a negative value should be flagged. We simulate by checking
   # the status logic directly on a synthetic import is not possible here, so
   # verify the function handles the tiny non-negative data cleanly.
@@ -64,7 +60,6 @@ test_that("check_signal_compatibility negative signal -> WARNING/FAIL status", {
 })
 
 test_that(".genome_tiles builds fixed genome tiles", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   tiles <- epiPortrait:::.genome_tiles(
@@ -78,7 +73,6 @@ test_that(".genome_tiles builds fixed genome tiles", {
 })
 
 test_that("check_signal_compatibility errors on missing BigWig files", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
@@ -89,7 +83,6 @@ test_that("check_signal_compatibility errors on missing BigWig files", {
 })
 
 test_that("check_signal_compatibility samples regions with a fixed seed", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   # Build a GRanges with more than max_windows entries to force subsampling.
@@ -109,7 +102,6 @@ test_that("check_signal_compatibility samples regions with a fixed seed", {
 })
 
 test_that("check_signal_compatibility without regions uses genome tiles", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   ss <- data.frame(SampleID = c("C1", "C2"), Condition = c("C", "C"),
@@ -120,7 +112,6 @@ test_that("check_signal_compatibility without regions uses genome tiles", {
 })
 
 test_that("print.epi_signal_qc method displays the summary table", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))

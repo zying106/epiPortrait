@@ -259,7 +259,7 @@ transition_matrix_per_sample <- function(se, feature = NULL, call_fmt = NULL,
     grp <- cols[grepl(paste0("^", prefix, "_Call__"), cols)]
     if (length(grp) == 0) {
       stop(sprintf("No columns matching '%s' found.",
-                   paste0("^", prefix, "_Call__")))
+                   sprintf("^%s_Call__", prefix)))
     }
     tps <- sub(paste0("^", prefix, "_Call__"), "", grp)
     if ("TimePoint" %in% colnames(colData(se))) {

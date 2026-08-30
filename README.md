@@ -32,6 +32,15 @@ and follows how these domain states remodel across biological conditions.
 
 ------------------------------------------------------------------------
 
+## epiPortrait in one line
+
+One auditable engine, three mark classes, no single-axis dogma: a
+replicate-aware framework that profiles H3K27ac super-enhancers (including a
+mode that faithfully reproduces ROSE), broad H3K4me3 promoter domains, and
+repressive H3K27me3 / H3K9me3 domains from continuous tracks and per-sample
+native peak calls, with optional score-aware HiChIP / BEDPE contact
+annotation.
+
 ## Why epiPortrait?
 
 Many epigenomic analyses collapse a region into one principal quantity:
@@ -57,7 +66,12 @@ super-enhancer width have an established literature. Its contribution is to
 place conventional native-domain breadth and continuous signal magnitude into
 a **unified replicate-aware framework**, preserve their distinct evidence
 sources, and convert them into interpretable condition-specific domain
-phenotypes and remodeling states.
+phenotypes and remodeling states. For H3K27ac enhancer-centric workflows,
+epiPortrait additionally offers a **ROSE-compatible benchmark mode**
+(`method = "tangent", log_transform = FALSE`): a faithful, auditable
+reproduction of ROSE-style super-enhancer calling within the same object
+contract, so published analyses can be re-run and extended without switching
+tools.
 
 ## What does epiPortrait add?
 
@@ -157,7 +171,7 @@ threshold).
 |:--------------|:-----------------|:--------------------------|
 | MACS2 / SICER / epic2 | Where are enriched peaks/domains? | epiPortrait starts after domain calling |
 | DiffBind / csaw | Where does enrichment differ statistically? | epiPortrait describes domain phenotype and remodeling mode |
-| ROSE | Which stitched enhancers are signal-extreme? | epiPortrait separates Intensity from native Breadth and adds replicate support |
+| ROSE | Which stitched enhancers are signal-extreme? | epiPortrait can **faithfully reproduce ROSE** (tangent + raw scale benchmark mode) *and* adds a native-breadth axis, replicate support, and score-aware 3D-contact annotation |
 | ChIPseeker | Where is a peak relative to genes/features? | epiPortrait uses annotation after quantitative phenotyping |
 | deepTools | How do signal tracks look across regions/samples? | epiPortrait converts track measurements into domain-level phenotypes |
 

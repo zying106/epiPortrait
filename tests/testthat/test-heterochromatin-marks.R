@@ -116,7 +116,6 @@ test_that("unknown mark falls back to generic preset with warning", {
 
 test_that("domain provenance is recorded when sample_sheet carries caller info", {
   # build with a tiny BigWig-only sheet carrying domain_source metadata
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   samples <- data.frame(

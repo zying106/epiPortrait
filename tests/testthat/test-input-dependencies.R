@@ -13,7 +13,6 @@ data(example_se)
 
 # ---- 1. candidate universe + single-sample Intensity ------------------------
 test_that("single-sample Intensity-only runs with candidate universe only", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
@@ -38,7 +37,6 @@ test_that("single-sample Intensity-only runs with candidate universe only", {
 })
 
 test_that("single-sample Breadth errors without peak_path (current behaviour)", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
@@ -58,7 +56,6 @@ test_that("single-sample Breadth errors without peak_path (current behaviour)", 
 
 # ---- 2. multi-sample Intensity does not need peak_path ----------------------
 test_that("multi-sample Intensity runs without per-sample native peaks", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 

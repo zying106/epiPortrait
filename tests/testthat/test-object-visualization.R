@@ -187,7 +187,6 @@ test_that("plot_hockey_stick consensus shows Uncertain class", {
 })
 
 test_that("plot_peak_track show_native_occupancy overlays span", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   samples <- data.frame(SampleID = c("C1", "C2"), Condition = c("Control", "Control"),
@@ -240,7 +239,6 @@ test_that("plot_hockey_stick label_genes labels top super-domains", {
 })
 
 test_that("plot_peak_track renders with NA native occupancy (no peak_path)", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   # sample sheet without peak_path -> NativeOccupiedWidth is all NA

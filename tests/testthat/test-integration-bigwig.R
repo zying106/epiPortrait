@@ -3,7 +3,6 @@
 # BigWig import path must be exercised by unit tests).
 
 test_that("full pipeline runs on tiny real BigWigs", {
-  skip_on_os("windows")  # rtracklayer BigWig is unsupported on Windows
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found (source checkout?)")
 
@@ -43,7 +42,6 @@ test_that("full pipeline runs on tiny real BigWigs", {
 })
 
 test_that("Breadth-Super calling works end-to-end on real BigWigs", {
-  skip_on_os("windows")  # rtracklayer BigWig is unsupported on Windows
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
@@ -71,7 +69,6 @@ test_that("Breadth-Super calling works end-to-end on real BigWigs", {
 })
 
 test_that("condition-aware consensus and combine work on real BigWigs", {
-  skip_on_os("windows")  # rtracklayer BigWig is unsupported on Windows
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
@@ -109,7 +106,6 @@ test_that("Intensity preserves fractional (non-integer) signal values", {
   # integer()-typed accumulation path (batch_ints) or type-promotion
   # regression. Domain widths (61/73/89 bp) deliberately produce FRACTIONAL
   # domain sums so an integer-truncation bug cannot hide behind whole numbers.
-  skip_on_os("windows")
   tmp <- tempfile(fileext = ".bw")
   on.exit(unlink(tmp))
   dom <- GenomicRanges::GRanges(

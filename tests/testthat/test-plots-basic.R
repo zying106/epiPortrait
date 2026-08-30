@@ -31,7 +31,6 @@ test_that("plot_hockey_stick points per_group users to the group argument", {
 })
 
 test_that("plot_peak_track returns ggplot on real BigWig", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found (source checkout?)")
   samples <- data.frame(

@@ -210,10 +210,11 @@ analyze_differential_domains <- function(se,
   min_trend_rows <- 20L
   trend_used <- trend
   if (trend_used && sum(fit_keep) < min_trend_rows) {
-    warning(sprintf(
-      paste("Only %d domain(s) passed min_signal filtering; disabling the",
-            "mean-variance trend (requires >= %d). Use trend = FALSE to silence."),
-      sum(fit_keep), min_trend_rows), call. = FALSE)
+    warning(
+      sprintf("Only %d domain(s) passed min_signal filtering; disabling the ",
+              sum(fit_keep)),
+      sprintf("mean-variance trend (requires >= %d). Use trend = FALSE to silence.",
+              min_trend_rows), call. = FALSE)
     trend_used <- FALSE
   }
   fit2 <- limma::eBayes(fit2, trend = trend_used, robust = robust)

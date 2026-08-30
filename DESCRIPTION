@@ -43,9 +43,9 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Config/testthat/edition: 3
-biocViews: ChIPSeq, Epigenetics, Coverage, Normalization,
-    GenomeAnnotation, QualityControl, Visualization,
-    PrincipalComponent
+biocViews: ChIPSeq, ATACSeq, Epigenetics, Coverage, Normalization,
+    DifferentialExpression, GenomeAnnotation, QualityControl,
+    Visualization, PrincipalComponent
 URL: https://github.com/zying106/epiPortrait
 BugReports: https://github.com/zying106/epiPortrait/issues
 Imports:

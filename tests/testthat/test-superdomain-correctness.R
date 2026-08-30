@@ -73,7 +73,6 @@ test_that("no-call / NA propagates to Uncertain in combined taxonomy", {
 
 # ---- P1-9 / 17.5: duplicate Domain_IDs must not silently mis-map ------------
 test_that("build_portrait_matrix enforces unique domain IDs", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found (source checkout?)")
 
@@ -405,7 +404,6 @@ test_that("min_valid_replicates NULL auto-resolves (Super + no_call is Uncertain
 
 # ---- P0-A: cache is not polluted by negative_policy -------------------------
 test_that("cache stores raw coverage (clip_zero then error still errors)", {
-  skip_on_os("windows")
   extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
   peaks <- rtracklayer::import(file.path(extdata, "peaks.bed"))
