@@ -577,7 +577,30 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 # 0 elsewhere), reproducing the exact numeric semantics of `as="NumericList"`
 # while staying Windows-compatible.
 .import_bw_views <- function(bw_path, regions) {
-  sparse <- rtracklayer::import.bw(bw_path, which = regions)
+  sparse <- tryCatch(
+    rtracklayer::import.bw(bw_path, which = regions),
+    error = function(e) {
+      msg <- conditionMessage(e)
+      # rtracklayer raises 'UCSC library operation failed' (and sometimes
+      # 'attempt to apply non-function') when reading local BigWig on the
+      # Windows binary (rtracklayer#52/#62/#128/#151). Give users a clear,
+      # actionable message instead of an opaque backend error, so a
+      # Windows user can ingest BigWigs on Linux/macOS or feed peak files /
+      # a pre-built matrix.
+      if (.Platform$OS.type == "windows" &&
+          grepl("UCSC|BigWig|operation failed|non-function", msg, ignore.case = TRUE)) {
+        stop(
+          "BigWig region import failed on Windows through the upstream ",
+          "rtracklayer/UCSC backend ('", msg, "'). This is a platform-specific ",
+          "upstream limitation (rtracklayer#52/#62/#128/#151), not an ",
+          "epiPortrait analysis error. Options: ingest BigWigs on ",
+          "Linux/macOS, or provide per-sample native peak (BED/narrowPeak) ",
+          "files / a pre-built portrait matrix so BigWig I/O is not needed.",
+          call. = FALSE)
+      }
+      # non-Windows or unrelated error: re-raise as-is
+      stop(conditionMessage(e), call. = FALSE)
+    })
   region_w <- GenomicRanges::width(regions)
   region_start <- GenomicRanges::start(regions)
   views <- lapply(seq_len(length(regions)), function(i) {

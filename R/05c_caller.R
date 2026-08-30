@@ -328,6 +328,10 @@ call_super_domains <- function(se, feature = "Intensity",
     rowData(se)[[paste0(feature, "_Replicate_Support")]] <- support_vec
     rowData(se)[[paste0(feature, "_N_Super_Replicates")]] <- n_super_reps
 
+    # Display/rank columns come from the group-MEAN signal (visualization only).
+    # They are NOT the classification engine; the global consensus decision is
+    # the per-sample -> replicate-support -> group-type chain above (review
+    # §6). Keep them clearly separated from the decision provenance.
     mean_call <- .run_call(setNames(rowMeans(mat, na.rm = TRUE), rownames(se)))
     rowData(se)[[paste0(feature, "_Rank")]] <- mean_call$Rank
     rowData(se)[[paste0(feature, "_Value")]] <- mean_call$Value_Used
@@ -335,7 +339,52 @@ call_super_domains <- function(se, feature = "Intensity",
     n_super <- sum(consensus_type == super_label, na.rm = TRUE)
     if (verbose) message(sprintf("Global consensus: %d super (rule '%s' per group), %d domains.",
                                   n_super, support_rule, nrow(se)))
-    provenance <- mean_call
+    # P1 (review §6): provenance must reflect the DECISION chain. Global
+    # consensus has no single cutoff: each replicate is cut on its own ranked
+    # distribution, support is aggregated per group. Store the per-sample
+    # cutoffs/status/quality PROFILES for audit, the per-group support/type
+    # matrices, and the final n_super from the real classification. The
+    # mean-call (display) cutoff is kept under an explicit "display_rank"
+    # key so it can never be mistaken for a classification cutoff.
+    per_sample_prov <- lapply(colnames(mat), function(s) {
+      r <- .run_call(setNames(mat[, s], rownames(se)))
+      list(replicate = s, cutoff = r$cutoff_value,
+           cutoff_stability_interval = r$cutoff_stability_interval,
+           bootstrap_success_rate = r$bootstrap_success_rate,
+           quality_score = r$quality_score,
+           call_status = r$call_status,
+           inflection_method = r$inflection_method)
+    })
+    names(per_sample_prov) <- colnames(mat)
+    provenance <- list(
+      mode = mode,
+      decision_chain = "per-sample cut -> replicate support -> per-group type -> global consensus (all groups Super)",
+      per_sample_evidence = per_sample_prov,
+      group_support = if (has_group) {
+        lapply(groups, function(g) rowData(se)[[paste0(feature, "_Support__", g)]])
+      } else NULL,
+      group_type = group_type_mat,
+      support_rule = support_rule,
+      min_replicate_support = min_replicate_support,
+      min_valid_replicates = min_valid_replicates,
+      n_super = n_super,
+      n_total = nrow(se),
+      cutoff_value = NA_real_,
+      quality_score = NA_real_,
+      call_status = "called-by-support",
+      effective_log_transform = mean_call$effective_log_transform,
+      display_rank = list(
+        note = "group-MEAN-signal rank/display cutoff; NOT the classification cutoff",
+        cutoff = mean_call$cutoff_value,
+        quality_score = mean_call$quality_score,
+        call_status = mean_call$call_status,
+        n_super = mean_call$n_super),
+      note = paste(
+        "Global consensus: no single cutoff ranks the consensus; each",
+        "replicate is cut on its own ranked distribution and group types are",
+        "aggregated by the support rule. cutoff/quality above are per-sample",
+        "profiles; the mean-signal cutoff under display_rank is for display only.")
+    )
 
   } else if (mode == "per_group") {
     # ---- Replicate-aware per-group calling (P0-7) ---------------------------
@@ -468,7 +517,15 @@ call_super_domains <- function(se, feature = "Intensity",
     seed = seed,
     note = provenance$note,
     groups = if (exists("group_prov", inherits = FALSE)) group_prov else NULL,
-    replicates = if (exists("rep_prov", inherits = FALSE)) rep_prov else NULL
+    replicates = if (exists("rep_prov", inherits = FALSE)) rep_prov else NULL,
+    # reviewer §6: global_consensus provenance must expose the DECISION chain
+    # (per-sample evidence, per-group support/types, display cutoffs kept
+    # separate). Only populated in global_consensus mode.
+    decision_chain = provenance$decision_chain,
+    per_sample_evidence = provenance$per_sample_evidence,
+    group_support = provenance$group_support,
+    group_type = provenance$group_type,
+    display_rank = provenance$display_rank
   )
 
   se

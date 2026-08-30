@@ -42,9 +42,15 @@ test_that("bootstrap cutoff CI is finite and reproducible under seed", {
                             n_bootstrap = 20, seed = 1, verbose = FALSE)
   md1 <- S4Vectors::metadata(se1)$superdomain_calls$Intensity
   md2 <- S4Vectors::metadata(se2)$superdomain_calls$Intensity
-  expect_true(is.finite(md1$cutoff))
-  expect_true(all(is.finite(md1$cutoff_stability_interval)))
-  expect_equal(md1$cutoff_stability_interval, md2$cutoff_stability_interval)
+  # global_consensus: per-sample evidence holds the bootstrap stability;
+  # display_rank$cutoff holds the mean-signal display cutoff (review §6).
+  expect_true(is.finite(md1$display_rank$cutoff))
+  expect_true(all(vapply(md1$per_sample_evidence,
+                         function(x) all(is.finite(x$cutoff_stability_interval)),
+                         logical(1))))
+  expect_identical(
+    md1$per_sample_evidence[[1]]$cutoff_stability_interval,
+    md2$per_sample_evidence[[1]]$cutoff_stability_interval)
 })
 
 # ---- P0-5 / 17.5: call provenance is stored --------------------------------
@@ -55,8 +61,18 @@ test_that("call provenance metadata is saved", {
   md <- S4Vectors::metadata(se)$superdomain_calls$Intensity
   expect_equal(md$method, "tangent")
   expect_equal(md$log_transform_used, FALSE)
-  expect_true(is.finite(md$cutoff))
-  expect_true(md$call_status %in% c("called", "no_call"))
+  # default mode = global_consensus: no single classification cutoff; the
+  # per-sample / display cutoffs are kept separately so a display cutoff never
+  # masquerades as the decision cutoff (review §6).
+  expect_equal(md$mode, "global_consensus")
+  expect_true(md$call_status %in% c("called", "no_call", "called-by-support"))
+  expect_true(is.finite(md$display_rank$cutoff))       # display cutoff present
+  expect_false(is.finite(md$cutoff))                    # but no "decision" cutoff
+  # per-sample decision evidence is stored for audit (configurable support)
+  expect_true(!is.null(md$per_sample_evidence))
+  expect_equal(length(md$per_sample_evidence), ncol(example_se))
+  expect_true(all(vapply(md$per_sample_evidence,
+                         function(x) is.finite(x$cutoff), logical(1))))
 })
 
 # ---- P0-8 / 17.6: no-call propagates to Uncertain in combined class ---------

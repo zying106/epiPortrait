@@ -195,6 +195,17 @@ domain caller and boundary quality. `SignalDispersion` describes spatial
 signal organization, not physical chromatin conformation. Annotated
 nearest/overlapping genes are candidates, not causal targets.
 
+**Windows note.** Direct local BigWig ingestion depends on the `rtracklayer`
+UCSC backend, which currently has platform-specific limitations on Windows
+(`UCSC library operation failed`; rtracklayer issues #52/#62/#128/#151).
+The remaining epiPortrait analysis workflow is platform-independent.
+BigWig-based integration tests therefore run on Linux and macOS (where the
+real import path is fully exercised), while all epiPortrait-specific
+computational logic (calling, support aggregation, annotation, differential
+analysis, transitions, visualization) remains tested on Windows. To avoid
+BigWig I/O on Windows, provide per-sample native peak files (BED/narrowPeak)
+or a pre-built portrait matrix.
+
 ------------------------------------------------------------------------
 
 ## Installation
