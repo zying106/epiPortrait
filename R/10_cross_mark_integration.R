@@ -134,8 +134,15 @@ integrate_cross_mark <- function(se_a, se_b,
                     length(shared), length(sl_a)), call. = FALSE)
   }
 
-  super_b <- paste0(mark_b, "_Super_Element")
-  typ_b   <- paste0(mark_b, "_Typical")
+  # Source call-value prefix comes from call_fmt_b (the REAL values in se_b's
+  # rowData), NOT from mark_b. mark_b is only the OUTPUT label. Deriving from
+  # mark_b would silently produce "H3K4me3_Super_Element" when the data carry
+  # "Breadth_Super_Element" (review 2026: P1 cross-mark prefix/label mixing).
+  source_prefix_b <- sub("_Call__%s$", "", call_fmt_b)
+  super_b <- paste0(source_prefix_b, "_Super_Element")
+  typ_b   <- paste0(source_prefix_b, "_Typical")
+  out_super_b <- paste0(mark_b, "_Super_Element")
+  out_typ_b   <- paste0(mark_b, "_Typical")
 
   hits <- GenomicRanges::findOverlaps(dom_a, dom_b)
   if (min_overlap_bp > 0) {
@@ -166,9 +173,12 @@ integrate_cross_mark <- function(se_a, se_b,
         n_typ <- sum(cb == typ_b, na.rm = TRUE)
         if (n_sup + n_typ == 0) return("Uncertain")
         if (aggregate_ov == "any_super") {
-          if (n_sup > 0) super_b else typ_b
+          if (n_sup > 0) out_super_b else {
+            # typical evidence exists; label with mark_b nomenclature
+            out_typ_b
+          }
         } else {
-          if (n_sup / (n_sup + n_typ) > 0.5) super_b else typ_b
+          if (n_sup / (n_sup + n_typ) > 0.5) out_super_b else out_typ_b
         }
       }, character(1))
     }

@@ -132,3 +132,22 @@ test_that("integrate_cross_mark majority rule and validation", {
                "same call prefix")
   expect_error(integrate_cross_mark(a, b, timepoints = "nope"), "Missing call")
 })
+
+test_that("integrate_cross_mark: mark_b label can differ from source call prefix", {
+  a <- make_cross_se("A")
+  b <- make_cross_se("B")
+  # se_b carries "Intensity_Call__t0/t1" but we label output "H3K4me3"
+  res <- integrate_cross_mark(a, b,
+                              call_fmt_a = "Breadth_Call__%s",
+                              call_fmt_b = "Intensity_Call__%s",
+                              mark_a = "Breadth", mark_b = "H3K4me3",
+                              timepoints = c("t0", "t1"),
+                              aggregate_ov = "any_super")
+  rd <- rowData(res)
+  # A domain 1 overlaps B_01 (t0 = Intensity_Super_Element) -> output H3K4me3 label
+  expect_equal(rd$H3K4me3_Call__t0[1], "H3K4me3_Super_Element")
+  # t1: B_01 is NA, so overlapping -> Uncertain
+  expect_equal(rd$H3K4me3_Call__t1[2], "Uncertain")
+  # output column exists under mark_b name
+  expect_true("H3K4me3_NOverlaps__t0" %in% colnames(rd))
+})

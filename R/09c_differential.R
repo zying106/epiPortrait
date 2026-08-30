@@ -180,12 +180,18 @@ analyze_differential_domains <- function(se,
   } else {
     Mt <- log10(m0 + 1)
   }
-  # drop rows below min_signal (based on mean transformed signal)
+  # drop rows below min_signal (based on mean transformed signal); these are
+  # EXCLUDED from the limma fit (documented semantics) and reported as NA
   means <- rowMeans(Mt, na.rm = TRUE)
   fit_keep <- is.finite(means) & means >= min_signal
+  Mt_fit <- Mt[fit_keep, , drop = FALSE]
+  n_fit <- nrow(Mt_fit)
 
-  # ---- limma fit ------------------------------------------------------------
-  fit <- limma::lmFit(Mt, design_used)
+  # ---- limma fit on the filtered subset -------------------------------------
+  # P0 fix: the fit runs on Mt_fit only (low-signal domains must not enter the
+  # empirical-Bayes / trend estimation), and results are mapped back by the
+  # ORIGINAL row index (fit_keep), never by position 1:n.
+  fit <- limma::lmFit(Mt_fit, design_used)
   # Normalize a two-coefficient name pair (coef1 - coef2) into numeric weights.
   if (is.character(contrast_used) && length(contrast_used) == 2L) {
     missing_coef <- setdiff(contrast_used, colnames(design_used))
@@ -209,10 +215,10 @@ analyze_differential_domains <- function(se,
   # Mean-variance trend needs a reasonable number of tested domains.
   min_trend_rows <- 20L
   trend_used <- trend
-  if (trend_used && sum(fit_keep) < min_trend_rows) {
+  if (trend_used && n_fit < min_trend_rows) {
     warning(
       sprintf("Only %d domain(s) passed min_signal filtering; disabling the ",
-              sum(fit_keep)),
+              n_fit),
       sprintf("mean-variance trend (requires >= %d). Use trend = FALSE to silence.",
               min_trend_rows), call. = FALSE)
     trend_used <- FALSE
@@ -220,16 +226,25 @@ analyze_differential_domains <- function(se,
   fit2 <- limma::eBayes(fit2, trend = trend_used, robust = robust)
   tt <- limma::topTable(fit2, number = Inf, sort.by = "none")
 
-  # ---- map back to rows -----------------------------------------------------
+  # ---- map back to original rows by index -----------------------------------
+  # topTable(sort.by = "none") is row-aligned to Mt_fit (the filtered subset),
+  # so tt row k corresponds to the k-th KEPT domain. We populate the output by
+  # the ORIGINAL row indices (keep_idx), which handles non-contiguous fit_keep
+  # correctly (regression: previously tt was indexed 1:n causing misalignment).
   out <- data.frame(matrix(NA_real_, nrow = nrow(se), ncol = 5))
   colnames(out) <- c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val")
-  out[fit_keep, ] <- tt[match(seq_len(sum(fit_keep)), seq_len(nrow(tt))), c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val")]
+  keep_idx <- which(fit_keep)
+  if (n_fit > 0) {
+    out[keep_idx, ] <- tt[seq_len(n_fit), c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val")]
+  }
   status <- rep(NA_character_, nrow(se))
   ok <- fit_keep & !is.na(out$logFC) & !is.na(out$adj.P.Val)
+  # P1-1 (review): every tested domain is NS unless it meets the Gain/Loss
+  # criteria — a large-effect-but-nonsignificant domain is "tested, NS", not
+  # NA (NA must stay reserved for "not tested / excluded").
+  if (any(ok)) status[ok] <- "NS"
   status[ok & out$logFC > logFC_cutoff & out$adj.P.Val < fdr_cutoff] <- "Gain"
   status[ok & out$logFC < -logFC_cutoff & out$adj.P.Val < fdr_cutoff] <- "Loss"
-  status[ok & !is.na(out$logFC) & abs(out$logFC) <= logFC_cutoff] <- "NS"
-  status[fit_keep & is.na(out$logFC)] <- "NS"
 
   pfx <- feature
   for (cc in colnames(out)) rowData(se)[[paste0(pfx, "_", cc)]] <- out[[cc]]

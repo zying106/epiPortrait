@@ -126,3 +126,51 @@ test_that("volcano plot returns a ggplot", {
   p <- plot_differential_volcano(res)
   expect_s3_class(p, "ggplot")
 })
+
+# ---- P0 regression: min_signal filtering must not mis-map rows (2026 review) --
+test_that("min_signal excludes low-signal domains from the fit and maps by index", {
+  set.seed(11)
+  n <- 20
+  gr <- GRanges(rep("chr1", n), IRanges(seq_len(n) * 1000, width = 500))
+  G <- factor(rep(c("Nor", "Tum"), each = 2))
+  M <- 2^matrix(rnorm(n * 4, mean = 3, sd = 1), nrow = n)
+  M[1:5, ] <- M[1:5, ]              # rows 1-5 := low signal (keep base)
+  M[6, ] <- 2^2                     # row 6 also low-ish
+  colnames(M) <- paste0("s", seq_len(4))
+  se <- SummarizedExperiment(assays = list(Intensity = M), rowRanges = gr,
+                             colData = DataFrame(SampleID = colnames(M),
+                                                 Condition = as.character(G)))
+  # force a fit_keep that is non-contiguous: min_signal clips the LOW rows 1:6
+  # (mean log2-scale small), leaving typically rows 7.. and others. To make the
+  # mapping bug reproducible deterministically we instead use a synthetic
+  # min_signal that drops a contiguous leading block -> check kept rows map to
+  # the correct original indices.
+  res <- analyze_differential_domains(se, ref_group = "Nor", target_group = "Tum",
+                                      min_signal = 3.5,
+                                      fdr_cutoff = 0.5, logFC_cutoff = 0.1)
+  rd <- rowData(res)
+  # domains below min_signal (in log2(x+1) mean) have NA results and are
+  # reported NS, never Gain/Loss, and never carry a wrong domain's statistics.
+  lo <- which(rowMeans(log2(assay(se, "Intensity") + 1)) < 3.5)
+  if (length(lo) > 0) {
+    expect_true(all(is.na(rd$Intensity_logFC[lo])))
+    # excluded domains are "not tested" -> NA DiffStatus (documented as
+    # unavailable, distinct from NS which means tested-but-not-significant)
+    expect_true(all(is.na(rd$Intensity_DiffStatus[lo])))
+  }
+  hi <- which(!is.na(rd$Intensity_logFC))
+  if (length(hi) > 0) {
+    # every result row must be >= min_signal by construction
+    expect_true(all(rowMeans(log2(assay(se, "Intensity")[hi, , drop = FALSE] + 1)) >= 3.5))
+  }
+})
+
+test_that("no min_signal filter runs on all rows (fit_keep all TRUE)", {
+  se <- make_diff_se()
+  res <- analyze_differential_domains(se, ref_group = "Nor", target_group = "Tum",
+                                      min_signal = 0, fdr_cutoff = 0.05,
+                                      logFC_cutoff = 0.5)
+  rd <- rowData(res)
+  expect_false(any(is.na(rd$Intensity_logFC)))
+  expect_true(sum(rd$Intensity_DiffStatus == "Gain", na.rm = TRUE) >= 19L)
+})

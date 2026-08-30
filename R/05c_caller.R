@@ -648,7 +648,7 @@ call_super_domains <- function(se, feature = "Intensity",
                       s, sum(is_broad), length(eligible),
                       if (is.null(quantile_cutoff))
                         ">= " else sprintf("= top %s%%, >= ",
-                                            format(100 * quantile_cutoff, digits = 2)),
+                                            format(100 * (1 - quantile_cutoff), digits = 2)),
                       cutoff_value))
     }
     # peak-level table (design: PeakWidth / PeakBroadCall / PeakRank)

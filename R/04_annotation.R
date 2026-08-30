@@ -724,7 +724,7 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
     # top candidate gene per domain: strongest best_tier, then symbol
     rel_val <- dedup$best_tier
     ord_idx <- order(match(dedup$domain_id, dom_ids), -rel_val,
-                     !is.na(dedup$gene_symbol), dedup$gene_symbol)
+                     is.na(dedup$gene_symbol), dedup$gene_symbol)
     d_sort  <- dedup[ord_idx, , drop = FALSE]
     d_first <- d_sort[!duplicated(d_sort$domain_id), , drop = FALSE]
     top_map <- stats::setNames(d_first$gene_symbol, d_first$domain_id)
@@ -1174,7 +1174,7 @@ get_domain_genes <- function(se, domains = NULL,
     sum(s, na.rm = TRUE)
   }
   dist_min <- function(i) {
-    d <- suppressWarnings(min(stats::na.omit(links$distance_to_tss_bp[i])))
+    d <- suppressWarnings(min(abs(stats::na.omit(links$distance_to_tss_bp[i]))))
     if (!is.finite(d)) NA_real_ else d
   }
   out <- data.frame(
