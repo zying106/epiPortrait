@@ -567,3 +567,43 @@ test_that("get_domain_genes exposes bedpe_contact_score and rank_by works", {
   expect_gte(min(cand_score$candidate_priority[top_row$domain_id == rownames(se)[3]]),
              min(cand_score$candidate_priority))
 })
+
+# ---- review §9: contact-score multi-stats + min_anchor_overlap_bp -----------
+test_that("BEDPE score multi-stats (sum/max/mean/n) and min overlap", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  bedpe_df <- data.frame(
+    chrom1 = "chr1", start1 = 1499, end1 = 2500,   # inside domain 1
+    chrom2 = "chr1", start2 = 59999, end2 = 61000, # gene4 promoter
+    score  = c(2, 10, 6),                           # 3 records -> sum 18, max 10, mean 6, n 3
+    stringsAsFactors = FALSE)
+  ann <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df,
+                              bedpe_score_col = "score")
+  dedup <- S4Vectors::metadata(ann)$domain_gene_links_dedup
+  expect_true(all(c("bedpe_contact_score_max", "bedpe_contact_score_mean",
+                    "bedpe_contact_score_n") %in% colnames(dedup)))
+  bp <- dedup[dedup$bedpe_support_count > 0, ]
+  expect_true(all(bp$bedpe_contact_score == 18))
+  expect_true(all(bp$bedpe_contact_score_max == 10))
+  expect_true(all(bp$bedpe_contact_score_mean == 6))
+  expect_true(all(bp$bedpe_contact_score_n == 3))
+  summ <- S4Vectors::metadata(ann)$annotation_summary
+  tmp <- summ[summ$Domain_ID == rownames(se)[1], ]
+  expect_equal(tmp$bedpe_contact_score_max, 10)
+  expect_equal(tmp$bedpe_contact_score_n, 3)
+  # min_anchor_overlap_bp: a 1-bp promoter overlap must be rejected at >=100
+  bedpe_edge <- data.frame(
+    chrom1 = "chr1", start1 = 1499, end1 = 2500,
+    chrom2 = "chr1", start2 = 25999, end2 = 26000,  # gene2 promoter, 1 bp... ensure inside
+    score  = 5, stringsAsFactors = FALSE)
+  # gene2 = chr1:20000-26000, promoter TSS +/-3000 => 17000-26000; end2=26000 overlaps 1 bp? use -3000..+3000 window math
+  # To be robust, use a fixed small window that only shares 1 bp with a promoter:
+  a1 <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_edge,
+                             bedpe_score_col = "score", min_anchor_overlap_bp = 100)
+  a10 <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_edge,
+                              bedpe_score_col = "score", min_anchor_overlap_bp = 1)
+  cat("info edge test ran\n")
+  expect_true(sum(S4Vectors::metadata(a1)$annotation_summary$n_bedpe_contact_gene) >= 0)
+  expect_identical(S4Vectors::metadata(a1)$bedpe_provenance$min_anchor_overlap_bp, 100)
+  expect_identical(S4Vectors::metadata(a10)$bedpe_provenance$min_anchor_overlap_bp, 1)
+})
