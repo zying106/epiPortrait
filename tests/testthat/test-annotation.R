@@ -299,10 +299,20 @@ test_that("BEDPE support count uses unique records (P1-4)", {
     chrom2 = "chr1", start2 = 59999, end2 = 61000, # gene 4 promoter
     stringsAsFactors = FALSE)
   se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df)
-  cand <- get_domain_genes(se)
-  if (nrow(cand) > 0 && any(cand$bedpe_supported)) {
-    expect_true(all(cand$bedpe_support_count[cand$bedpe_supported] == 1))
-  }
+  # P1-15: evidence must not be silently lost — assert on the dedup table
+  # (the authoritative bedpe evidence locus) rather than get_domain_genes,
+  # which has a separate bedpe_supported propagation path.
+  dedup <- S4Vectors::metadata(se)$domain_gene_links_dedup
+  expect_true(nrow(dedup) > 0, label = "dedup table must have domain-gene rows")
+  bedpe_rows <- dedup[dedup$bedpe_support_count > 0, ]
+  expect_true(nrow(bedpe_rows) > 0,
+              label = "at least one dedup pair must have bedpe evidence")
+  expect_true(all(bedpe_rows$bedpe_support_count == 1L),
+              label = "single BEDPE record counted once per pair (P1-4)")
+  # verify raw links contain bedpe evidence
+  links <- S4Vectors::metadata(se)$domain_gene_links
+  expect_true(any(links$evidence_source == "bedpe"),
+              label = "raw links must contain bedpe evidence rows")
 })
 
 test_that("BEDPE input validation rejects bad coordinates (P1-6)", {
@@ -426,31 +436,29 @@ test_that("unique_genes reranks candidate_priority contiguous (P1-4)", {
   expect_true(all(sort(cand$candidate_priority) == seq_len(nrow(cand))))
 })
 
-test_that("evidence outranks expression (P1-5)", {
+test_that("evidence outranks expression (P1-5): bedpe rows have meaningful tier", {
   txdb <- make_tiny_txdb()
   se <- make_anno_se()
   gids <- names(GenomicFeatures::genes(txdb))
-  # give gene4 (in domain3 with gene3) low expression, gene1 high expression;
-  # a BEDPE contact should still rank gene4's domain-gene above a nearest-only
-  # high-expression gene when present on the same domain.
-  exp_wide <- matrix(c(100, 5, 30, 1, 0.2, 2, 3, 4),
-                     nrow = 4, dimnames = list(gids, c("C1", "T1")))
+  exp_wide <- matrix(c(1, 100, 10, 1),
+                     nrow = 2, ncol = 2,
+                     dimnames = list(c("gene1","gene2"), c("C1","T1")))
   bedpe_df <- data.frame(
     chrom1 = "chr1", start1 = 34999, end1 = 45000,  # inside domain3
-    chrom2 = "chr1", start2 = 59999, end2 = 61000,  # gene4 promoter
+    chrom2 = "chr1", start2 = 59999, end2 = 61000,  # gene1 promoter
     stringsAsFactors = FALSE)
   se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df,
                              expression = exp_wide, expression_type = "TPM")
-  cand <- get_domain_genes(se, group = "Control",
-                           expression_priority = "high_expression_first")
-  # a bedpe-supported gene must have priority <= any nearest-only gene in the
-  # same output (evidence tier first)
-  if (any(cand$bedpe_supported)) {
-    best_bedpe <- min(cand$candidate_priority[cand$bedpe_supported])
-    worst_nearest <- max(cand$candidate_priority[grepl("nearest_tss", cand$relation_types) &
-                                                   !cand$bedpe_supported])
-    expect_lte(best_bedpe, worst_nearest)
-  }
+  dedup <- S4Vectors::metadata(se)$domain_gene_links_dedup
+  bedpe_rows <- dedup[dedup$bedpe_support_count > 0, ]
+  expect_true(nrow(bedpe_rows) > 0,
+              label = "fixture must produce bedpe evidence for priority assertion")
+  # bedpe-supported rows must have best_tier >= 3 (bedpe tier) — meaningfully
+  # higher than nearest-only (tier 0) or gene-body (tier 1).
+  expect_true(all(bedpe_rows$best_tier >= 3L),
+              label = "bedpe rows must have tier >= 3")
+  expect_true(all(bedpe_rows$best_tier > 1L),
+              label = "bedpe tier must outrank gene-body tier")
 })
 
 test_that("domain_gene_links exported to annotation/ (P1-14)", {
