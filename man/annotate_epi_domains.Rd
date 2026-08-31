@@ -13,6 +13,7 @@ annotate_epi_domains(
   promoter_downstream = 3000,
   bedpe = NULL,
   bedpe_score_col = NULL,
+  min_anchor_overlap_bp = NULL,
   expression = NULL,
   expression_type = NULL,
   aggregate_fun = "median",
@@ -43,16 +44,26 @@ records are read-only (no calling / filtering / merging).}
 a per-record contact STRENGTH (e.g. the FitHiChIP TMM-normalized contact
 frequency in column 8). Integer column index (>= 7; columns 1-6 are the
 coordinates) or a column name (file inputs expose V1..Vn names; a
-data.frame input can carry arbitrary names). When given, three quantitative
+data.frame input can carry arbitrary names). When given, quantitative
 outputs are produced IN ADDITION to the count-based evidence:
-\code{metadata(se)$domain_gene_links$contact_score} (per evidence row),
-\code{bedpe_contact_score} in the dedup table (summed over the UNIQUE
-supporting records of the pair), and \code{bedpe_contact_score} in the
-annotation summary (summed over the unique records of the domain).
-Rationale: FitHiChIP-style TMM BEDPEs often share an identical loop SET
-across conditions and vary only in score, so count-based integration alone
-cannot capture contact dynamics. NULL (default) keeps the previous
-count-only behaviour unchanged.}
+\code{metadata(se)$domain_gene_links$contact_score} (per evidence row), and
+four per-record aggregates (\code{sum} / \code{max} / \code{mean} /
+\code{n}) over the UNIQUE supporting records, exposed as
+\code{bedpe_contact_score(_max/_mean/_n)} in both the dedup pair table and
+the annotation summary (and mirrored on rowData). Rationale: FitHiChIP-style
+TMM BEDPEs often share an identical loop SET across conditions and vary only
+in score, so count-based integration alone cannot capture contact dynamics;
+\code{sum} reflects total contact burden, \code{max} a single dominant
+interaction, \code{mean} per-record intensity, and \code{n} record count.
+NULL (default) keeps the previous count-only behaviour unchanged.}
+
+\item{min_anchor_overlap_bp}{Numeric or NULL. Minimum base pairs of overlap
+required between a domain anchor and a BEDPE anchor for the 3D contact to
+be counted (default NULL = any overlap >= 1 bp). If \code{0}, any
+overlapping anchor pair qualifies; a positive value (e.g. 1) rejects
+edge-touching records and controls permissive 1-bp anchoring cited in
+review. Applies to BOTH anchor sides (domain-anchor and promoter-anchor)
+of the domain-gene contact.}
 
 \item{expression}{A gene-level expression object: a wide matrix (genes x
 samples), a long data.frame (gene_id, SampleID, Condition, expression), or
@@ -72,8 +83,10 @@ using other ID systems such as ENSEMBL / TAIR / FlyBase).}
 \code{se} with rowData columns: primary_genomic_context,
 nearest_tss_gene_id, nearest_tss_gene_symbol, nearest_tss_distance_bp,
 promoter_overlap_gene_count, gene_body_overlap_gene_count,
-fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score
-(only when \code{bedpe_score_col} is given), and
+fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score,
+bedpe_contact_score_max, bedpe_contact_score_mean, bedpe_contact_score_n
+(only the count column is always present; the score columns only when
+\code{bedpe_score_col} is given), and
 top_candidate_gene_symbol; the annotation result is also exposed as a
 three-level structure in metadata:
 \itemize{

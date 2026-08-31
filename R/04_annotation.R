@@ -215,16 +215,25 @@
 #'   a per-record contact STRENGTH (e.g. the FitHiChIP TMM-normalized contact
 #'   frequency in column 8). Integer column index (>= 7; columns 1-6 are the
 #'   coordinates) or a column name (file inputs expose V1..Vn names; a
-#'   data.frame input can carry arbitrary names). When given, three quantitative
+#'   data.frame input can carry arbitrary names). When given, quantitative
 #'   outputs are produced IN ADDITION to the count-based evidence:
-#'   \code{metadata(se)$domain_gene_links$contact_score} (per evidence row),
-#'   \code{bedpe_contact_score} in the dedup table (summed over the UNIQUE
-#'   supporting records of the pair), and \code{bedpe_contact_score} in the
-#'   annotation summary (summed over the unique records of the domain).
-#'   Rationale: FitHiChIP-style TMM BEDPEs often share an identical loop SET
-#'   across conditions and vary only in score, so count-based integration alone
-#'   cannot capture contact dynamics. NULL (default) keeps the previous
-#'   count-only behaviour unchanged.
+#'   \code{metadata(se)$domain_gene_links$contact_score} (per evidence row), and
+#'   four per-record aggregates (\code{sum} / \code{max} / \code{mean} /
+#'   \code{n}) over the UNIQUE supporting records, exposed as
+#'   \code{bedpe_contact_score(_max/_mean/_n)} in both the dedup pair table and
+#'   the annotation summary (and mirrored on rowData). Rationale: FitHiChIP-style
+#'   TMM BEDPEs often share an identical loop SET across conditions and vary only
+#'   in score, so count-based integration alone cannot capture contact dynamics;
+#'   \code{sum} reflects total contact burden, \code{max} a single dominant
+#'   interaction, \code{mean} per-record intensity, and \code{n} record count.
+#'   NULL (default) keeps the previous count-only behaviour unchanged.
+#' @param min_anchor_overlap_bp Numeric or NULL. Minimum base pairs of overlap
+#'   required between a domain anchor and a BEDPE anchor for the 3D contact to
+#'   be counted (default NULL = any overlap >= 1 bp). If \code{0}, any
+#'   overlapping anchor pair qualifies; a positive value (e.g. 1) rejects
+#'   edge-touching records and controls permissive 1-bp anchoring cited in
+#'   review. Applies to BOTH anchor sides (domain-anchor and promoter-anchor)
+#'   of the domain-gene contact.
 #' @param expression A gene-level expression object: a wide matrix (genes x
 #'   samples), a long data.frame (gene_id, SampleID, Condition, expression), or
 #'   NULL.
@@ -238,8 +247,10 @@
 #' @return \code{se} with rowData columns: primary_genomic_context,
 #'   nearest_tss_gene_id, nearest_tss_gene_symbol, nearest_tss_distance_bp,
 #'   promoter_overlap_gene_count, gene_body_overlap_gene_count,
-#'   fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score
-#'   (only when \code{bedpe_score_col} is given), and
+#'   fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score,
+#'   bedpe_contact_score_max, bedpe_contact_score_mean, bedpe_contact_score_n
+#'   (only the count column is always present; the score columns only when
+#'   \code{bedpe_score_col} is given), and
 #'   top_candidate_gene_symbol; the annotation result is also exposed as a
 #'   three-level structure in metadata:
 #'   \itemize{
@@ -266,6 +277,7 @@
 annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NULL,
                                   promoter_upstream = 3000, promoter_downstream = 3000,
                                   bedpe = NULL, bedpe_score_col = NULL,
+                                  min_anchor_overlap_bp = NULL,
                                   expression = NULL,
                                   expression_type = NULL,
                                   aggregate_fun = "median",
@@ -287,6 +299,12 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   if (!is.null(bedpe_score_col) &&
       !is.numeric(bedpe_score_col) && !is.character(bedpe_score_col)) {
     stop("bedpe_score_col must be an integer column index or a column name.")
+  }
+  if (!is.null(min_anchor_overlap_bp)) {
+    if (length(min_anchor_overlap_bp) != 1L || !is.numeric(min_anchor_overlap_bp) ||
+        !is.finite(min_anchor_overlap_bp) || min_anchor_overlap_bp < 0) {
+      stop("min_anchor_overlap_bp must be a finite non-negative number (or NULL).")
+    }
   }
   # ---- genome resources ----------------------------------------------------
   res <- .resolve_genome_resources(genome, txdb = txdb, anno_db = anno_db)
@@ -459,6 +477,8 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   if (!is.null(bedpe)) {
     bp_res <- .load_bedpe(bedpe, score_col = bedpe_score_col)
     bedpe_prov <- bp_res$provenance
+    bedpe_prov$min_anchor_overlap_bp <-
+      if (is.null(min_anchor_overlap_bp)) 1 else min_anchor_overlap_bp
     # P1-5: seqlevel compatibility must actually be enforced for BEDPE. A
     # chr1-vs-1 style mismatch would silently yield zero contacts.
     dom_sl <- unique(as.character(GenomicRanges::seqnames(domains)))
@@ -477,7 +497,10 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
         "unmatched contigs will be absent."), call. = FALSE)
     }
     bedpe_links <- .bedpe_promoter_contacts(bp_res$gr, domains, domain_ids,
-                                            promoters_gr)
+                                            promoters_gr,
+                                            min_overlap_bp =
+                                              if (is.null(min_anchor_overlap_bp)) 1 else
+                                                min_anchor_overlap_bp)
     if (nrow(bedpe_links) > 0) links <- rbind(links, bedpe_links)
   }
 
@@ -645,23 +668,38 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
                         function(x) length(unique(x)))
       bed_ct[names(bed_tab)] <- as.integer(bed_tab)
     }
-    # pair-level contact score (bedpe_score_col): summed over the UNIQUE
-    # supporting records of the pair. Pairs without BEDPE evidence keep 0;
-    # a pair with records but no usable score values stays NA so that
-    # "no 3D evidence" and "3D evidence without a score" remain distinct
-    # (this also covers runs WITHOUT bedpe_score_col).
-    bed_sc <- setNames(numeric(length(unique(key))), unique(key))
+    # pair-level contact scores (bedpe_score_col): per pair over the UNIQUE
+    # supporting records. sum / max / mean are the primary quantitative
+    # summaries (review §9: expose more than a single aggregate); _n is the
+    # number of unique supporting records (same as bedpe_support_count but
+    # numeric here). Pairs without BEDPE evidence keep 0; a pair with records
+    # but no usable score values stays NA everywhere so that "no 3D evidence"
+    # and "3D evidence without a score" remain distinct (also covers runs
+    # WITHOUT bedpe_score_col).
+    bed_sc  <- setNames(numeric(length(unique(key))), unique(key))
+    bed_max <- setNames(numeric(length(unique(key))), unique(key))
+    bed_mean<- setNames(numeric(length(unique(key))), unique(key))
+    bed_n   <- setNames(integer(length(unique(key))), unique(key))
     if (any(is_bedpe)) {
       idx_bp <- which(is_bedpe)
       if (!is.null(bp_res) && !is.null(bp_res$score)) {
-        sc_tab <- tapply(idx_bp, key[idx_bp], function(i) {
-          s <- links$contact_score[i][!duplicated(links$bedpe_record_id[i])]
-          if (all(is.na(s))) return(NA_real_)
-          sum(s, na.rm = TRUE)
+        sc4_tab <- tapply(idx_bp, key[idx_bp], function(i) {
+          ii <- !duplicated(links$bedpe_record_id[i])
+          s <- links$contact_score[i][ii]
+          if (all(is.na(s))) return(c(NA_real_, NA_real_, NA_real_, 0))
+          c(sum(s, na.rm = TRUE), max(s, na.rm = TRUE), mean(s, na.rm = TRUE),
+            sum(!is.na(s)))
         })
-        bed_sc[names(sc_tab)] <- as.numeric(sc_tab)
+        m <- do.call(rbind, sc4_tab)
+        bed_sc[rownames(m)]  <- m[, 1, drop = TRUE]
+        bed_max[rownames(m)] <- m[, 2, drop = TRUE]
+        bed_mean[rownames(m)]<- m[, 3, drop = TRUE]
+        bed_n[rownames(m)]   <- as.integer(m[, 4, drop = TRUE])
       } else {
-        bed_sc[unique(key[is_bedpe])] <- NA_real_
+        bed_sc[unique(key[is_bedpe])]  <- NA_real_
+        bed_max[unique(key[is_bedpe])] <- NA_real_
+        bed_mean[unique(key[is_bedpe])]<- NA_real_
+        bed_n[unique(key[is_bedpe])]   <- 0L
       }
     }
     # --- build from per-key splits directly, grouping by key preserving order ---
@@ -682,6 +720,9 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
       nearest_tss_distance_bp = pair_dist[names(sp_idx)],
       bedpe_support_count = bed_ct[names(sp_idx)],
       bedpe_contact_score = unname(bed_sc[names(sp_idx)]),
+      bedpe_contact_score_max  = unname(bed_max[names(sp_idx)]),
+      bedpe_contact_score_mean = unname(bed_mean[names(sp_idx)]),
+      bedpe_contact_score_n    = unname(bed_n[names(sp_idx)]),
       stringsAsFactors = FALSE)
     dedup$gene_symbol[is.na(dedup$gene_symbol)] <- sym_lookup[names(sp_idx)][is.na(dedup$gene_symbol)]
     rownames(dedup) <- NULL
@@ -692,29 +733,46 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
                         best_evidence_source = character(0), best_tier = integer(0),
                         nearest_tss_distance_bp = numeric(0),
                         bedpe_support_count = integer(0),
-                        bedpe_contact_score = numeric(0), stringsAsFactors = FALSE)
+                        bedpe_contact_score = numeric(0),
+                        bedpe_contact_score_max = numeric(0),
+                        bedpe_contact_score_mean = numeric(0),
+                        bedpe_contact_score_n = integer(0),
+                        stringsAsFactors = FALSE)
   }
 
   # --- level 1: one row per domain (master summary table) -------------------
   n_dom <- length(domains)
   dom_ids <- rownames(se)
-  # per-domain contact score: summed over the UNIQUE records linked to the
-  # domain (any contacted gene). Domains without BEDPE evidence keep 0;
-  # domains WITH contacts but without usable scores (e.g. runs without
-  # bedpe_score_col) stay NA, mirroring the pair-level semantics.
-  dom_score <- setNames(numeric(n_dom), dom_ids)
+  # per-domain contact scores (bedpe_score_col): sum / max / mean over the
+  # UNIQUE records linked to the domain (any contacted gene). Domains without
+  # BEDPE evidence keep 0; domains WITH contacts but without usable scores
+  # (e.g. runs without bedpe_score_col) stay NA, mirroring pair semantics.
+  dom_score  <- setNames(numeric(n_dom), dom_ids)
+  dom_max    <- setNames(numeric(n_dom), dom_ids)
+  dom_mean   <- setNames(numeric(n_dom), dom_ids)
+  dom_n      <- setNames(integer(n_dom), dom_ids)
   is_bp2 <- !is.na(links$bedpe_record_id) & links$evidence_source == "bedpe"
   if (any(is_bp2)) {
     idx_bp2 <- which(is_bp2)
     if (!is.null(bp_res) && !is.null(bp_res$score)) {
       ds_tab <- tapply(idx_bp2, links$domain_id[idx_bp2], function(i) {
-        s <- links$contact_score[i][!duplicated(links$bedpe_record_id[i])]
-        if (all(is.na(s))) return(NA_real_)
-        sum(s, na.rm = TRUE)
+        ii <- !duplicated(links$bedpe_record_id[i])
+        s <- links$contact_score[i][ii]
+        if (all(is.na(s))) return(c(sum = NA_real_, max = NA_real_,
+                                    mean = NA_real_, n = 0))
+        c(sum(s, na.rm = TRUE), max(s, na.rm = TRUE), mean(s, na.rm = TRUE),
+          sum(!is.na(s)))
       })
-      dom_score[names(ds_tab)] <- as.numeric(ds_tab)
+      dm <- do.call(rbind, ds_tab)
+      dom_score[rownames(dm)]  <- dm[, 1, drop = TRUE]
+      dom_max[rownames(dm)]    <- dm[, 2, drop = TRUE]
+      dom_mean[rownames(dm)]   <- dm[, 3, drop = TRUE]
+      dom_n[rownames(dm)]      <- as.integer(dm[, 4, drop = TRUE])
     } else {
-      dom_score[unique(links$domain_id[idx_bp2])] <- NA_real_
+      dom_score[unique(links$domain_id[idx_bp2])]  <- NA_real_
+      dom_max[unique(links$domain_id[idx_bp2])]    <- NA_real_
+      dom_mean[unique(links$domain_id[idx_bp2])]   <- NA_real_
+      dom_n[unique(links$domain_id[idx_bp2])]      <- 0L
     }
   }
   if (nrow(dedup) > 0) {
@@ -747,6 +805,9 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
     n_linked_gene   = as.integer(unname(n_genes_per_dom[dom_ids])),
     n_bedpe_contact_gene = as.integer(unname(n_bedpe_gene[dom_ids])),
     bedpe_contact_score = as.numeric(unname(dom_score[dom_ids])),
+    bedpe_contact_score_max  = as.numeric(unname(dom_max[dom_ids])),
+    bedpe_contact_score_mean = as.numeric(unname(dom_mean[dom_ids])),
+    bedpe_contact_score_n    = as.integer(unname(dom_n[dom_ids])),
     top_candidate_gene_symbol = unname(top_map[dom_ids]),
     top_candidate_gene_id     = unname(top_id[dom_ids]),
     stringsAsFactors = FALSE)
@@ -757,6 +818,9 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
   # user can sort/filter on the SE object without pulling metadata
   rowData(se)$n_bedpe_contact_gene     <- summary_tbl$n_bedpe_contact_gene
   rowData(se)$bedpe_contact_score      <- summary_tbl$bedpe_contact_score
+  rowData(se)$bedpe_contact_score_max  <- summary_tbl$bedpe_contact_score_max
+  rowData(se)$bedpe_contact_score_mean <- summary_tbl$bedpe_contact_score_mean
+  rowData(se)$bedpe_contact_score_n    <- summary_tbl$bedpe_contact_score_n
   rowData(se)$top_candidate_gene_symbol <- summary_tbl$top_candidate_gene_symbol
 
   S4Vectors::metadata(se)$annotation_summary   <- summary_tbl
@@ -893,22 +957,42 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
 # A domain-gene 3D contact is recorded when the domain overlaps one anchor AND
 # the gene promoter overlaps the OTHER anchor (either orientation). Only
 # promoter contacts are used as 3D evidence in v1.0.
-.bedpe_promoter_contacts <- function(anchor1, domains, domain_ids, promoters_gr) {
+.bedpe_promoter_contacts <- function(anchor1, domains, domain_ids, promoters_gr,
+                                     min_overlap_bp = 1) {
   a1 <- anchor1
   a2 <- S4Vectors::mcols(a1)$.anchor2
   rec1 <- S4Vectors::mcols(a1)$bedpe_record_id
   rec2 <- S4Vectors::mcols(a2)$bedpe_record_id
+  if (length(min_overlap_bp) != 1L || !is.numeric(min_overlap_bp) ||
+      !is.finite(min_overlap_bp) || min_overlap_bp < 1) {
+    stop("min_overlap_bp must be a finite number >= 1 (bp of anchor overlap).")
+  }
 
   # P1-8: range-vectorized. For each direction, one findOverlaps for
   # domain<->anchor and one for promoter<->anchor, then join by
   # bedpe_record_id. No per-hit inner findOverlaps (scales to 10^4-10^6
   # interactions).
-  .link_side <- function(d_hits, other_anchor, other_rec) {
+  .link_side <- function(d_hits, dom_anchor, other_anchor, other_rec) {
     if (length(d_hits) == 0) return(data.frame())
     qh <- S4Vectors::queryHits(d_hits)
     sh <- S4Vectors::subjectHits(d_hits)
-    # records whose OTHER anchor overlaps a promoter
+    # enforce a MINIMUM overlap width on the DOMAIN-anchor side (dom_anchor,
+    # which is the anchor this direction overlaps: a1 for dir1, a2 for dir2)
+    # and on the PROMOTER-anchor side, so edge-touching / 1-bp anchors do not
+    # create spurious contacts (review §9).
+    ov_w <- GenomicRanges::width(GenomicRanges::pintersect(
+      domains[qh], dom_anchor[sh]))
+    keep_d <- ov_w >= min_overlap_bp
+    qh <- qh[keep_d]; sh <- sh[keep_d]
+    if (length(qh) == 0) return(data.frame())
+    # records whose OTHER anchor overlaps a promoter (with min overlap)
     p_hits <- GenomicRanges::findOverlaps(promoters_gr, other_anchor)
+    if (length(p_hits) == 0) return(data.frame())
+    p_qh <- S4Vectors::queryHits(p_hits); p_sh <- S4Vectors::subjectHits(p_hits)
+    p_ov <- GenomicRanges::width(GenomicRanges::pintersect(
+      promoters_gr[p_qh], other_anchor[p_sh]))
+    p_keep <- p_ov >= min_overlap_bp
+    p_hits <- p_hits[p_keep]
     if (length(p_hits) == 0) return(data.frame())
     p_rec <- other_rec[S4Vectors::subjectHits(p_hits)]
     p_gene <- S4Vectors::mcols(promoters_gr)$gene_id[S4Vectors::queryHits(p_hits)]
@@ -938,10 +1022,10 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
 
   # direction 1: domain overlaps anchor1, promoter overlaps anchor2
   d1 <- GenomicRanges::findOverlaps(domains, a1)
-  out <- .link_side(d1, a2, rec2)
+  out <- .link_side(d1, a1, a2, rec2)
   # direction 2: domain overlaps anchor2, promoter overlaps anchor1 (symmetric)
   d2 <- GenomicRanges::findOverlaps(domains, a2)
-  out2 <- .link_side(d2, a1, rec1)
+  out2 <- .link_side(d2, a2, a1, rec1)
   rbind(out, out2)
 }
 
