@@ -173,13 +173,25 @@ analyze_differential_domains <- function(se,
   }
 
   # ---- transform + filter ---------------------------------------------------
+  # P1 (review §2/§3): NA must stay NA (missing != zero signal); negative
+  # signal must NOT be silently clipped to 0 (would contradict
+  # negative_policy = "allow" from build_portrait_matrix). EpigenDomain-level
+  # differential analysis requires non-negative, non-missing intensity.
   M <- assay(se, feature)
-  m0 <- pmax(M, 0, na.rm = TRUE)
+  if (any(M < 0, na.rm = TRUE)) {
+    stop("Differential analysis requires a non-negative assay, but '",
+         feature, "' contains negative value(s). Re-run build_portrait_matrix() ",
+         "with a non-negative (CPM/RPGC/spike-in) track, or analyze a ",
+         "non-negative assay.", call. = FALSE)
+  }
+  m0 <- M
   if (transform == "log2") {
     Mt <- log2(m0 + 1)
   } else {
     Mt <- log10(m0 + 1)
   }
+  # rows with NA signal are excluded from the fit (documented as untested);
+  # rowMeans(na.rm=TRUE) would otherwise blur missing with zero.
   # drop rows below min_signal (based on mean transformed signal); these are
   # EXCLUDED from the limma fit (documented semantics) and reported as NA
   means <- rowMeans(Mt, na.rm = TRUE)
@@ -191,6 +203,13 @@ analyze_differential_domains <- function(se,
   # P0 fix: the fit runs on Mt_fit only (low-signal domains must not enter the
   # empirical-Bayes / trend estimation), and results are mapped back by the
   # ORIGINAL row index (fit_keep), never by position 1:n.
+  # P1-robust (review §12): a 0-row fit is a user error (threshold too high /
+  # all NA), not a silent all-NA result.
+  if (n_fit == 0L) {
+    stop("No domains passed min_signal filtering (min_signal = ",
+         min_signal, "). Lower min_signal or check that the assay is present ",
+         "and non-NA.", call. = FALSE)
+  }
   fit <- limma::lmFit(Mt_fit, design_used)
   # Normalize a two-coefficient name pair (coef1 - coef2) into numeric weights.
   if (is.character(contrast_used) && length(contrast_used) == 2L) {
@@ -320,7 +339,15 @@ plot_differential_volcano <- function(se, feature = "Intensity",
 
   df <- data.frame(
     logFC = rd[[logFC_col]],
-    negLog10P = -log10(pmax(rd[[padj_col]], 1e-300, na.rm = TRUE)),
+    # P1 (review §4): untested domains (NA adj.P.Val) must NOT become 1e-300 ->
+    # -log10 = 300 "extreme significance"; keep them NA (dropped by ggplot).
+    negLog10P = {
+      prv <- rd[[padj_col]]
+      nlp <- rep(NA_real_, length(prv))
+      fin <- is.finite(prv) & prv >= 0
+      nlp[fin] <- -log10(pmax(prv[fin], 1e-300))
+      nlp
+    },
     Status = if (status_col %in% colnames(rd)) rd[[status_col]] else NA_character_,
     stringsAsFactors = FALSE)
   df$Status <- factor(df$Status, levels = c("Gain", "Loss", "NS"))

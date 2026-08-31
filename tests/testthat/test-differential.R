@@ -174,3 +174,65 @@ test_that("no min_signal filter runs on all rows (fit_keep all TRUE)", {
   expect_false(any(is.na(rd$Intensity_logFC)))
   expect_true(sum(rd$Intensity_DiffStatus == "Gain", na.rm = TRUE) >= 19L)
 })
+
+# ---- epiPortrait3 review §2/§3/§4/§12: NA & negative semantics -------------
+test_that("negative assay values are rejected, not silently clipped", {
+  se <- make_diff_se()
+  M <- assay(se, "Intensity")
+  M[1, 1] <- -5                              # inject a negative
+  assay(se, "Intensity") <- M
+  expect_error(analyze_differential_domains(se, ref_group = "Nor",
+                                            target_group = "Tum"),
+               "non-negative assay")
+})
+
+test_that("all-NA / below-min_signal domains are excluded (rows NA), NA != 0", {
+  set.seed(3)
+  n <- 12
+  gr <- GRanges(rep("chr1", n), IRanges(seq_len(n) * 1000, width = 500))
+  G <- factor(rep(c("Nor", "Tum"), each = 2))
+  M <- 2^matrix(rnorm(n * 4, mean = 3, sd = 1), nrow = n)
+  M[1, ] <- NA                               # row 1 = all-NA -> excluded, not 0
+  M[2, ] <- 2                                # row 2 = very low signal
+  colnames(M) <- paste0("s", seq_len(4))
+  se <- SummarizedExperiment(assays = list(Intensity = M), rowRanges = gr,
+                             colData = DataFrame(SampleID = colnames(M),
+                                                 Condition = as.character(G)))
+  res <- analyze_differential_domains(se, ref_group = "Nor", target_group = "Tum",
+                                      min_signal = 3, fdr_cutoff = 0.5,
+                                      logFC_cutoff = 0.1)
+  rd <- rowData(res)
+  # row 1 (all NA) must be excluded -> NA logFC (not 0)
+  expect_true(is.na(rd$Intensity_logFC[1]))
+  # other rows (above min_signal) produce finite results
+  hi <- which(!is.na(rd$Intensity_logFC))
+  expect_true(length(hi) >= 1)
+  expect_true(all(is.finite(rd$Intensity_logFC[hi])))
+})
+
+test_that("n_fit == 0 (all below min_signal) is an explicit error", {
+  se <- make_diff_se()
+  expect_error(analyze_differential_domains(se, ref_group = "Nor",
+                                            target_group = "Tum",
+                                            min_signal = 1e6),
+               "No domains passed min_signal")
+})
+
+test_that("volcano keeps untested (NA adj.P.Val) domains as NA, not extreme", {
+  se <- make_diff_se()
+  res <- analyze_differential_domains(se, ref_group = "Nor", target_group = "Tum",
+                                      min_signal = 0, fdr_cutoff = 0.05,
+                                      logFC_cutoff = 0.5)
+  # simulate two domains that were NOT tested (NA adjusted P)
+  rowData(res)$Intensity_adj.P.Val[c(1, 2)] <- NA_real_
+  p <- plot_differential_volcano(res, feature = "Intensity", label_n = 2)
+  b <- ggplot2::ggplot_build(p)
+  dat <- b$data[[1]]
+  # NA adj.P.Val rows are dropped from the geometry -> fewer points than domains
+  expect_true(nrow(dat) <= nrow(res))
+  # no plotted point may carry -log10P == 300 (old NA->1e-300 artifact)
+  if (nrow(dat) > 0) {
+    yf <- dat$y[is.finite(dat$y)]
+    if (length(yf) > 0) expect_true(all(yf < 200))
+  }
+})

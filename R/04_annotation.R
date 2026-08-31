@@ -686,9 +686,12 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
         sc4_tab <- tapply(idx_bp, key[idx_bp], function(i) {
           ii <- !duplicated(links$bedpe_record_id[i])
           s <- links$contact_score[i][ii]
-          if (all(is.na(s))) return(c(NA_real_, NA_real_, NA_real_, 0))
+          # bedpe_contact_score_n = number of UNIQUE supporting records
+          # (matches bedpe_support_count semantics; review §8), not the count
+          # of scored ones.
+          if (all(is.na(s))) return(c(NA_real_, NA_real_, NA_real_, length(s)))
           c(sum(s, na.rm = TRUE), max(s, na.rm = TRUE), mean(s, na.rm = TRUE),
-            sum(!is.na(s)))
+            length(s))
         })
         m <- do.call(rbind, sc4_tab)
         bed_sc[rownames(m)]  <- m[, 1, drop = TRUE]
@@ -758,10 +761,12 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
       ds_tab <- tapply(idx_bp2, links$domain_id[idx_bp2], function(i) {
         ii <- !duplicated(links$bedpe_record_id[i])
         s <- links$contact_score[i][ii]
+        # bedpe_contact_score_n = number of UNIQUE supporting records
+        # (review §8)
         if (all(is.na(s))) return(c(sum = NA_real_, max = NA_real_,
-                                    mean = NA_real_, n = 0))
+                                    mean = NA_real_, n = length(s)))
         c(sum(s, na.rm = TRUE), max(s, na.rm = TRUE), mean(s, na.rm = TRUE),
-          sum(!is.na(s)))
+          length(s))
       })
       dm <- do.call(rbind, ds_tab)
       dom_score[rownames(dm)]  <- dm[, 1, drop = TRUE]
@@ -900,10 +905,16 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
                            if (!is.null(colnames(tab)))
                              paste0(" (", colnames(tab)[sidx], ")") else "")
     score_vals <- suppressWarnings(as.numeric(tab[[sidx]]))
-    n_bad <- sum(!is.finite(score_vals))
-    if (n_bad > 0) warning(sprintf(
-      "%d/%d non-finite values in the BEDPE contact-score column were kept as NA.",
-      n_bad, length(score_vals)), call. = FALSE)
+    # P1 (review §7): as.numeric("Inf") gives Inf, not NA; forcibly convert
+    # ANY non-finite value (NA, NaN, Inf, -Inf) to NA so downstream sum/max/
+    # mean/n never propagate Inf.
+    bad <- !is.finite(score_vals)
+    if (any(bad)) {
+      score_vals[bad] <- NA_real_
+      warning(sprintf(
+        "%d/%d non-finite values in the BEDPE contact-score column were converted to NA.",
+        sum(bad), length(score_vals)), call. = FALSE)
+    }
   }
   # P1-6: strict input validation (chrom non-empty, start/end numeric, start>=0,
   # end>start). BEDPE is 0-based half-open.
