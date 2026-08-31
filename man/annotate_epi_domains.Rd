@@ -59,11 +59,12 @@ NULL (default) keeps the previous count-only behaviour unchanged.}
 
 \item{min_anchor_overlap_bp}{Numeric or NULL. Minimum base pairs of overlap
 required between a domain anchor and a BEDPE anchor for the 3D contact to
-be counted (default NULL = any overlap >= 1 bp). If \code{0}, any
-overlapping anchor pair qualifies; a positive value (e.g. 1) rejects
-edge-touching records and controls permissive 1-bp anchoring cited in
-review. Applies to BOTH anchor sides (domain-anchor and promoter-anchor)
-of the domain-gene contact.}
+be counted (default NULL = any overlap, i.e. >= 1 bp). A value of
+\code{1} requires at least 1 bp, \code{2} at least 2 bp, \code{100} at
+least 100 bp of anchor overlap; typical meaningful thresholds are tens to
+hundreds of base pairs depending on anchor resolution. Does NOT reject
+1-bp overlaps (use >= 2 for that). Applies to BOTH anchor sides
+(domain-anchor and promoter-anchor) of the domain-gene contact.}
 
 \item{expression}{A gene-level expression object: a wide matrix (genes x
 samples), a long data.frame (gene_id, SampleID, Condition, expression), or

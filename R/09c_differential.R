@@ -54,7 +54,7 @@
 #' @param contrast A contrast specification: NULL (uses ref/target), a length-2
 #'   character vector of column names to subtract (coef1 - coef2), or a numeric
 #'   matrix from \code{limma::makeContrasts}.
-#' @param transform Character. "log2" (default) or "log10p1". Transform applied
+#' @param transform Character. "log2" (only; v1.0). Transform applied
 #'   to the (non-negative) signal before limma.
 #' @param min_signal Numeric. Filter: domains whose mean transformed signal is
 #'   below this are dropped from the fit (NA results), to avoid fitting noise.
@@ -94,7 +94,7 @@ analyze_differential_domains <- function(se,
                                          target_group = NULL,
                                          design = NULL,
                                          contrast = NULL,
-                                         transform = c("log2", "log10p1"),
+                                         transform = c("log2"),
                                          min_signal = 0,
                                          logFC_cutoff = 1,
                                          fdr_cutoff = 0.05,
@@ -185,11 +185,8 @@ analyze_differential_domains <- function(se,
          "non-negative assay.", call. = FALSE)
   }
   m0 <- M
-  if (transform == "log2") {
-    Mt <- log2(m0 + 1)
-  } else {
-    Mt <- log10(m0 + 1)
-  }
+  Mt <- log2(m0 + 1)  # v1.0: only log2, so <feature>_logFC / logFC_cutoff /
+                      # volcano x-axis are semantically consistent (review §11).
   # rows with NA signal are excluded from the fit (documented as untested);
   # rowMeans(na.rm=TRUE) would otherwise blur missing with zero.
   # drop rows below min_signal (based on mean transformed signal); these are

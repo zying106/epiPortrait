@@ -592,18 +592,26 @@ test_that("BEDPE score multi-stats (sum/max/mean/n) and min overlap", {
   expect_equal(tmp$bedpe_contact_score_max, 10)
   expect_equal(tmp$bedpe_contact_score_n, 3)
   # min_anchor_overlap_bp: a 1-bp promoter overlap must be rejected at >=100
+  # but retained at >=1 (review §14: exact-outcome, not just "no crash").
+  # gene2 = chr1:20000-26000, TSS +/-3000 -> promoter window overlaps
+  # anchor2 (25999-26000) by 1 bp.
   bedpe_edge <- data.frame(
     chrom1 = "chr1", start1 = 1499, end1 = 2500,
-    chrom2 = "chr1", start2 = 25999, end2 = 26000,  # gene2 promoter, 1 bp... ensure inside
+    chrom2 = "chr1", start2 = 25999, end2 = 26000,
     score  = 5, stringsAsFactors = FALSE)
-  # gene2 = chr1:20000-26000, promoter TSS +/-3000 => 17000-26000; end2=26000 overlaps 1 bp? use -3000..+3000 window math
-  # To be robust, use a fixed small window that only shares 1 bp with a promoter:
-  a1 <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_edge,
+  a1  <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_edge,
                              bedpe_score_col = "score", min_anchor_overlap_bp = 100)
   a10 <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_edge,
                               bedpe_score_col = "score", min_anchor_overlap_bp = 1)
-  cat("info edge test ran\n")
-  expect_true(sum(S4Vectors::metadata(a1)$annotation_summary$n_bedpe_contact_gene) >= 0)
+  n_contact_1bp   <- sum(S4Vectors::metadata(a10)$annotation_summary$n_bedpe_contact_gene)
+  n_contact_100bp <- sum(S4Vectors::metadata(a1)$annotation_summary$n_bedpe_contact_gene)
+  # default NULL == any overlap: same as min=1 here
+  aNULL <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_edge,
+                                bedpe_score_col = "score")
+  n_contact_default <- sum(S4Vectors::metadata(aNULL)$annotation_summary$n_bedpe_contact_gene)
+  expect_gt(n_contact_1bp, 0)     # 1-bp overlap retained at min=1
+  expect_equal(n_contact_100bp, 0L)  # 1-bp overlap filtered at min=100
+  expect_equal(n_contact_default, n_contact_1bp)
   expect_identical(S4Vectors::metadata(a1)$bedpe_provenance$min_anchor_overlap_bp, 100)
   expect_identical(S4Vectors::metadata(a10)$bedpe_provenance$min_anchor_overlap_bp, 1)
 })

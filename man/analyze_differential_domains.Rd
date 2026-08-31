@@ -12,7 +12,7 @@ analyze_differential_domains(
   target_group = NULL,
   design = NULL,
   contrast = NULL,
-  transform = c("log2", "log10p1"),
+  transform = c("log2"),
   min_signal = 0,
   logFC_cutoff = 1,
   fdr_cutoff = 0.05,
@@ -39,7 +39,7 @@ model, or NULL to build from \code{group_var} + \code{ref_group}/
 character vector of column names to subtract (coef1 - coef2), or a numeric
 matrix from \code{limma::makeContrasts}.}
 
-\item{transform}{Character. "log2" (default) or "log10p1". Transform applied
+\item{transform}{Character. "log2" (only; v1.0). Transform applied
 to the (non-negative) signal before limma.}
 
 \item{min_signal}{Numeric. Filter: domains whose mean transformed signal is

@@ -488,10 +488,8 @@ test_that(".classify_vs_cutoff honors tie_policy and keeps NA", {
 
 # ---- freeze review 2026-08-11: entry-point validation ------------------------
 test_that("build_portrait_matrix rejects duplicate / empty SampleID and NA Condition", {
-  # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");
-  # rtracklayer#52/#62/#128/#151. Narrow skip: this block only. epiPortrait logic
-  # that does not read BigWigs is still executed on Windows.
-  skip_on_os("windows")
+  # input validation errors fire BEFORE any BigWig I/O (P1-9): runs on all
+  # platforms, including Windows.
   gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 100))
   dup <- data.frame(SampleID = c("A", "A"), Condition = c("C", "C"),
                     bw_path = c("x", "x"), stringsAsFactors = FALSE)
