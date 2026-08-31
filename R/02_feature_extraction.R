@@ -567,15 +567,12 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 # Import per-region BigWig coverage as a NumericList of full-length per-base
 # vectors, using the GRanges (sparse) import path rather than `as="NumericList"`.
 #
-# Rationale (2026-08-29, Windows CI): rtracklayer's `import(..., as="NumericList")`
-# routes through `BWGFile_query(..., as_numericlist = TRUE)`, which raises
-# "UCSC library operation failed" on the Windows binary. The default GRanges
-# path (`import.bw(con, which = ...)`, i.e. `as="GRanges"`) works on all
-# platforms and returns the variable-width bins as single-base (width-1) ranges
-# carrying the bin score at the bin start. We expand those sparse bins back to
-# a full-length per-base vector per region (score at `start - region_start + 1`,
-# 0 elsewhere), reproducing the exact numeric semantics of `as="NumericList"`
-# while staying Windows-compatible.
+# The GRanges path avoids the Windows-specific `NumericList` failure observed in
+# some `rtracklayer` builds, but local BigWig I/O may still fail on Windows
+# through the upstream UCSC backend ("UCSC library operation failed";
+# rtracklayer#52/#62/#128/#151); that case is re-raised with a clear, actionable
+# message (see the tryCatch below). The expansion reproduces the exact numeric
+# semantics of `as="NumericList"` on platforms where BigWig reads succeed.
 .import_bw_views <- function(bw_path, regions) {
   sparse <- tryCatch(
     rtracklayer::import.bw(bw_path, which = regions),

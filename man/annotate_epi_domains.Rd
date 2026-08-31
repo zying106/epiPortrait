@@ -85,8 +85,9 @@ nearest_tss_gene_id, nearest_tss_gene_symbol, nearest_tss_distance_bp,
 promoter_overlap_gene_count, gene_body_overlap_gene_count,
 fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score,
 bedpe_contact_score_max, bedpe_contact_score_mean, bedpe_contact_score_n
-(only the count column is always present; the score columns only when
-\code{bedpe_score_col} is given), and
+(BEDPE score-summary columns are always present: values are NA for
+supported contacts without a usable score, and 0 for domains with no
+BEDPE evidence, so downstream schemas are stable), and
 top_candidate_gene_symbol; the annotation result is also exposed as a
 three-level structure in metadata:
 \itemize{

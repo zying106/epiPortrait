@@ -495,7 +495,7 @@ call_super_domains <- function(se, feature = "Intensity",
   S4Vectors::metadata(se)$superdomain_calls[[feature]] <- list(
     feature = feature,
     mode = mode,
-    group_var = if (mode == "per_group") group_var else NULL,
+    group_var = if (mode %in% c("per_group", "global_consensus")) group_var else NULL,
     method = method,
     log_transform_requested = log_transform,
     log_transform_used = if (!is.null(provenance$effective_log_transform))
@@ -893,7 +893,7 @@ call_super_domains <- function(se, feature = "Intensity",
   S4Vectors::metadata(se)$superdomain_calls[["Breadth"]] <- list(
     feature = "Breadth",
     mode = mode,
-    group_var = if (mode == "per_group") group_var else NULL,
+    group_var = if (mode %in% c("per_group", "global_consensus")) group_var else NULL,
     method = method,
     quantile_cutoff = quantile_cutoff,
     min_quality = min_quality,
@@ -908,6 +908,9 @@ call_super_domains <- function(se, feature = "Intensity",
     replicates = prov_replicates,
     groups = if (exists("breadth_group_prov", inherits = FALSE)) breadth_group_prov else NULL,
     n_total = nrow(se),
+    final_n_super = if (mode == "global_consensus") {
+      sum(consensus_type == super_label, na.rm = TRUE)
+    } else NULL,
     calling_paradigm = "peak-level native PeakWidth, unique mapping, replicate aggregation")
   if (length(peak_tables) > 0) {
     S4Vectors::metadata(se)$breadth_peak_calls <- do.call(rbind, peak_tables)

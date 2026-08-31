@@ -67,7 +67,7 @@ place conventional native-domain breadth and continuous signal magnitude into
 a **unified replicate-aware framework**, preserve their distinct evidence
 sources, and convert them into interpretable condition-specific domain
 phenotypes and remodeling states. For H3K27ac enhancer-centric workflows,
-epiPortrait additionally offers a **ROSE-compatible benchmark mode**
+epiPortrait additionally offers a **ROSE-inspired benchmark mode**
   (`method = "tangent", log_transform = FALSE`): a geometric inflection
   variant of ROSE's `calculate_cutoff()` step — not a bit-exact port — within
   the same object contract, so published analyses can be re-run in an auditable
@@ -171,7 +171,7 @@ threshold).
 |:--------------|:-----------------|:--------------------------|
 | MACS2 / SICER / epic2 | Where are enriched peaks/domains? | epiPortrait starts after domain calling |
 | DiffBind / csaw | Where does enrichment differ statistically? | epiPortrait describes domain phenotype and remodeling mode |
-| ROSE | Which stitched enhancers are signal-extreme? | epiPortrait offers a **ROSE-compatible tangent mode** (geometric variant of ROSE's cutoff step, not bit-exact) *and* adds a native-breadth axis, replicate support, and score-aware 3D-contact annotation |
+| ROSE | Which stitched enhancers are signal-extreme? | epiPortrait offers a **ROSE-inspired tangent mode** (geometric variant of ROSE's cutoff step, not bit-exact) *and* adds a native-breadth axis, replicate support, and score-aware 3D-contact annotation |
 | ChIPseeker | Where is a peak relative to genes/features? | epiPortrait uses annotation after quantitative phenotyping |
 | deepTools | How do signal tracks look across regions/samples? | epiPortrait converts track measurements into domain-level phenotypes |
 
@@ -202,9 +202,11 @@ The remaining epiPortrait analysis workflow is platform-independent.
 BigWig-based integration tests therefore run on Linux and macOS (where the
 real import path is fully exercised), while all epiPortrait-specific
 computational logic (calling, support aggregation, annotation, differential
-analysis, transitions, visualization) remains tested on Windows. To avoid
-BigWig I/O on Windows, provide per-sample native peak files (BED/narrowPeak)
-or a pre-built portrait matrix.
+analysis, transitions, visualization) remains tested on Windows. On Windows,
+build the portrait matrix from BigWig tracks on Linux/macOS and save the
+resulting `SummarizedExperiment` for downstream analysis. Per-sample native
+peak files (BED/narrowPeak) remain optional input for Breadth-Super evidence
+but do NOT replace the BigWig signal (Intensity) input.
 
 ------------------------------------------------------------------------
 

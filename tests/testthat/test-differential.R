@@ -236,3 +236,42 @@ test_that("volcano keeps untested (NA adj.P.Val) domains as NA, not extreme", {
     if (length(yf) > 0) expect_true(all(yf < 200))
   }
 })
+
+# ---- epiPortrait3 review §13: TRUE non-contiguous fit_keep mapping ----------
+test_that("non-contiguous min_signal filter maps results to correct rows", {
+  set.seed(21)
+  n <- 30
+  gr <- GRanges(rep("chr1", n), IRanges(seq_len(n) * 1000, width = 500))
+  G <- factor(rep(c("Nor", "Tum"), each = 3))   # n = 2 groups x 3 reps? use 6 samples
+  M <- 2^matrix(rnorm(n * 6, mean = 4, sd = 1), nrow = n)
+  # scatter LOW rows interspersed: 2,5,9,14 (NOT a contiguous leading block)
+  M[c(2, 5, 9, 14), ] <- 2
+  colnames(M) <- paste0("s", seq_len(6))
+  se <- SummarizedExperiment(assays = list(Intensity = M), rowRanges = gr,
+                             colData = DataFrame(SampleID = colnames(M),
+                                                 Condition = rep(c("Nor","Tum"), each=3)))
+  res <- analyze_differential_domains(se, ref_group = "Nor", target_group = "Tum",
+                                      min_signal = 3, fdr_cutoff = 0.5,
+                                      logFC_cutoff = 0.1)
+  rd <- rowData(res)
+  lo <- which(rowMeans(log2(assay(se, "Intensity") + 1)) < 3)
+  # verify the filtered set is genuinely interspersed (not contiguous)
+  lo <- sort(lo)
+  expect_true(length(lo) >= 4)
+  expect_true(any(diff(lo) == 1) == FALSE || length(lo) < 5)  # not a solid run
+  # kept domains -> finite results; dropped -> NA
+  expect_true(all(is.na(rd$Intensity_logFC[lo])))
+  hi <- setdiff(seq_len(n), lo)
+  expect_true(all(is.finite(rd$Intensity_logFC[hi])))
+  # EXACT mapping check: independently refit only the kept rows and compare
+  suppressPackageStartupMessages(library(limma))
+  Mv <- log2(assay(se, "Intensity") + 1)
+  design <- model.matrix(~ factor(rep(c("Nor","Tum"), each=3)))
+  fit_man <- limma::lmFit(Mv[hi, , drop = FALSE], design)
+  tt_man <- limma::topTable(limma::eBayes(limma::contrasts.fit(fit_man, c(0,1))),
+                            number = Inf, sort.by = "none")
+  # package output for kept domain i == tt_man row matching position in hi
+  for (k in seq_along(hi)) {
+    expect_equal(rd$Intensity_logFC[hi[k]], tt_man$logFC[k], tolerance = 1e-10)
+  }
+})
