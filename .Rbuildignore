@@ -21,6 +21,7 @@
 ^\.git$
 ^\.github$
 ^validation$
+^benchmark$
 ^vignettes/.*\.html$
 ^doc$
 ^Meta$

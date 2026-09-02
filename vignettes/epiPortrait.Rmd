@@ -28,14 +28,14 @@ use_bw <- .Platform$OS.type != "windows"
 
 Epigenomic domains are often summarized by signal enrichment, yet signal
 magnitude is only one aspect of domain organization. A focal, high-amplitude
-H3K27ac region and a broad, moderately enriched regulatory domain may carry
-similar integrated signal while representing different chromatin states.
-Likewise, broad H3K4me3 or H3K27me3 domains can expand or contract without
-proportional changes in signal abundance. These scenarios represent different
-regulatory states but can be obscured when a region is summarized by a single
-ranking statistic.
+H3K27ac region and a broad, moderately enriched region may carry similar
+integrated signal while having different signal geometries. Likewise, broad
+H3K4me3 or H3K27me3 domains can change in measured breadth without a
+proportional change in signal. A single ranking statistic can obscure these
+patterns. Their biological meaning requires mark- and experiment-specific
+validation.
 
-`epiPortrait` was designed to represent these changes explicitly. It separates
+`epiPortrait` represents these measurements separately. It distinguishes
 **integrated signal magnitude** from **replicate-specific native domain
 breadth**, retains within-domain signal dispersion as a complementary
 structural descriptor, and aggregates evidence only after each biological
@@ -55,9 +55,9 @@ The design of `epiPortrait` rests on five principles:
 |:--|:----------|
 | 1 | **Shared coordinates are for comparison, not Breadth truth.** The consensus candidate-domain universe is a comparison frame; it never defines a sample's breadth. |
 | 2 | **Breadth comes from replicate-specific native geometry.** Each replicate's own peak/domain calls carry the breadth evidence. |
-| 3 | **Intensity and Breadth are separable canonical axes.** They are measured and classified independently, not merged into one rank. |
+| 3 | **Intensity and Breadth are classified separately.** They are not merged into one rank, but they may remain correlated because integrated signal depends partly on interval length. |
 | 4 | **Replicate evidence is retained before group aggregation.** Per-replicate calls are aggregated with explicit support rules; `Uncertain` is an abstention when evidence is insufficient. |
-| 5 | **Biological interpretation depends on the histone mark.** The quantitative engine is mark-independent; the surface terminology is mark-aware. |
+| 5 | **Biological interpretation depends on the histone mark.** The calculations are shared across marks, but the labels do not imply the same biology for active and repressive marks. |
 
 ## A domain can change in different ways
 
@@ -66,12 +66,12 @@ directions:
 
 | Ref | Target | Interpretation |
 |:----|:-------|:---------------|
-| Typical | Intensity-Super | magnitude-dominant activation |
-| Typical | Breadth-Super | breadth expansion |
-| Typical | Dual-Super | coupled magnitude + breadth acquisition |
-| Intensity-Super | Dual-Super | acquisition of extreme breadth |
-| Breadth-Super | Dual-Super | acquisition of extreme magnitude |
-| Breadth-Super | Typical | breadth contraction / loss of broad state |
+| Typical | Intensity-Super | acquisition of a relative intensity-extreme state |
+| Typical | Breadth-Super | acquisition of a relative broad state |
+| Typical | Dual-Super | acquisition of both relative states |
+| Intensity-Super | Dual-Super | additional broad-state call |
+| Breadth-Super | Dual-Super | additional intensity-state call |
+| Breadth-Super | Typical | loss of the relative broad-state call |
 
 The default `cutoff_scope = "relative"` transition expresses a **relative
 rank-state change, not absolute biochemical gain/loss** (see Module 4).
@@ -81,8 +81,8 @@ rank-state change, not absolute biochemical gain/loss** (see Module 4).
 `epiPortrait` distinguishes the **shared coordinate frame** (the consensus
 candidate-domain universe, one interval per domain across all samples) from the
 **sample-specific native peak geometry** (each replicate's own peak/domain
-calls). This separation is the central design point: the Breadth-Super call is
-derived from the native geometry, never from the consensus width itself.
+calls). The Breadth-Super call is derived from native peak geometry, not from
+the width of the shared consensus interval.
 
 ## Relationship to existing methods
 
@@ -94,10 +94,10 @@ derived from the native geometry, never from the consensus width itself.
 | ChIPseeker | Where is a peak relative to genes/features? | epiPortrait uses annotation after quantitative phenotyping |
 | deepTools | How do signal tracks look across regions/samples? | epiPortrait converts track measurements into domain-level phenotypes |
 
-`epiPortrait` complements these: it is a replicate-aware quantitative
+`epiPortrait` complements these tools as a replicate-aware quantitative
 **domain-phenotyping** layer (Intensity × native Breadth decomposition, plus
-within-domain architecture), rather than a peak caller, a differential-caller,
-or an annotation engine. Primary use case: histone-mark ChIP-seq / CUT&Tag;
+within-domain dispersion), rather than a peak caller or count-based
+differential method. The primary use case is histone-mark ChIP-seq or CUT&Tag;
 continuous-track workflows also apply to ATAC-seq-derived domains.
 
 Because the input is normalized continuous signal (BigWig) rather than raw
@@ -114,17 +114,17 @@ BiocManager::install(c(
   "org.Hs.eg.db", "org.Mm.eg.db"
 ))
 
-devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
+if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
+remotes::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 ```
 
 # Quick Start with Example Data
 
 `epiPortrait` ships a simulated `SummarizedExperiment` (`example_se`) with 500
-domains across 6 samples (3 Control, 3 Treatment) and 5 quantitative assays:
-the two canonical axes (Intensity, native peak breadth geometry), one secondary
-architecture descriptor (SignalDispersion), and the two remaining
-native-geometry descriptors (NativeMaxPeakWidth, NativeOccupiedWidth,
-NativePeakCount).
+domains across 6 samples (3 Control, 3 Treatment). Its assays contain
+Intensity, SignalDispersion, NativeMaxPeakWidth, NativeOccupiedWidth, and
+NativePeakCount. The canonical Breadth call is derived from replicate-specific
+native peak widths rather than from a single domain-level assay.
 
 ```{r quickstart}
 library(epiPortrait)
@@ -154,8 +154,8 @@ The rest of this vignette runs on a tiny synthetic BigWig dataset shipped in
 `inst/extdata` (4 samples: 2 Control, 2 Treatment; 3 domains on chr21), which
 exercises the real BigWig I/O and portrait-matrix construction path.
 Subsequent inflection-based calling is demonstrated on the 500-domain
-`example_se`, because a three-domain I/O fixture is not intended to provide a
-statistically meaningful ranked distribution (freeze review 2026-08-11).
+`example_se`, because three domains do not provide an informative ranked
+distribution for cutoff estimation.
 
 ## 1.1 The candidate-domain universe is required
 
@@ -243,8 +243,8 @@ samples).
 Breadth-Super calling are unavailable; `Intensity-Super` remains available, and
 `SignalDispersion` can still be explored as a secondary architecture
 descriptor. When `peak_path` is supplied, the imported native peaks are
-retained in `metadata(se)$native_peaks` for auditable peak-level breadth
-calling.
+retained in `metadata(se)$native_peaks` so that peak-level breadth calls can be
+inspected.
 
 For your own data, replace the sample sheet paths with your real normalized
 BigWigs (and native peak files), and `consensus_peaks` with your consensus peak
@@ -303,8 +303,9 @@ Two heuristics are available via the `method` argument:
 
 - **`"elbow"`** (default): the point with the maximum perpendicular distance
   to the first-last ranked line — classic knee detection.
-- **`"tangent"`**: a ROSE-inspired tangent-optimization inflection (Whyte et
-  al., 2013, *Cell* 153:307-319). Slides a line whose slope is
+- **`"tangent"`**: a ROSE-inspired tangent-optimization inflection
+  ([Whyte *et al.*, 2013](https://doi.org/10.1016/j.cell.2013.03.035)). It
+  slides a line whose slope is
   `(max - min)/n` and minimizes the number of points below it. Note that this
   is a geometric variant of ROSE's `calculate_cutoff()` step, not a bit-exact
   reproduction; it is only an inflection step, not the full ROSE pipeline.
@@ -323,8 +324,8 @@ explicit top-fraction alternative that bypasses inflection detection: for
 `Breadth` it is the same quantile of each replicate's genome-wide eligible
 native PeakWidth distribution, so the top `100*(1-quantile_cutoff)`% widest
 native peaks are Broad (e.g. `0.95` = top 5% — a common broad-domain
-practice). This is an explicit user opt-in with no quality gate (the user
-owns the QC choice); it **never** auto-falls-back to, or from, the
+practice). This option does not assess cutoff quality. It **never**
+automatically falls back to, or from, the
 data-driven inflection path, so the no-call semantics of the default path are
 unchanged.
 
@@ -338,16 +339,21 @@ static `IntervalWidth` is not auto-log-transformed. Set
 to force it.
 
 **Optional H3K27ac benchmark against ROSE.** If you plan a head-to-head
-comparison with the original ROSE method (Whyte et al., 2013, *Cell*
-153:307-319), use `method = "tangent"` with `log_transform = FALSE` (raw
+comparison with the original ROSE method ([Whyte *et al.*,
+2013](https://doi.org/10.1016/j.cell.2013.03.035)), use `method = "tangent"`
+with `log_transform = FALSE` (raw
 signal, ROSE-style scale). Because the tangent implementation is a geometric
 variant rather than a bit-exact port, validate any ROSE-reproduction numbers
 against the reference `calculate_cutoff()` before drawing quantitative
 conclusions. This is an optional benchmark setting, not the package's primary
-workflow; the core value of epiPortrait is the Intensity × native-Breadth
-decomposition with replicate support. The log-transformed default is retained
+workflow. The log-transformed default is retained
 as the epiPortrait convention because it stabilises the skewed intensity
 distribution for the elbow heuristic and downstream analysis.
+
+All `Super` labels are relative to the candidate-domain universe and selected
+cutoff. They should not be interpreted as functional super-enhancers without
+independent evidence. Intensity is the area under the signal track, so it can
+increase with signal amplitude, interval length, or both.
 
 ## 3.3 Modes
 
@@ -441,8 +447,9 @@ Transition classes depend on `cutoff_scope`:
   signal gain/loss — a domain whose signal is unchanged can still switch class
   if the global background of the treatment shifts the group cutoff.
 - **`"reference"`** / **`"pooled"`**: a common cutoff is applied to both
-  groups, so `Gain` / `Loss` are closer to absolute interpretations (only
-  valid when the BigWigs are quantitatively comparable).
+  groups, producing common-scale state `Gain` / `Loss` labels. These labels
+  still do not establish an absolute biochemical change and require
+  quantitatively comparable BigWigs.
 
 ```{r transitions-reference}
 se_t2 <- compare_superdomains(se_t, group_var = "Condition",
@@ -498,11 +505,10 @@ plot_portrait_pca(example_se, feature = "Intensity", group_var = "Condition")
 plot_portrait_correlation(example_se, feature = "Intensity")
 ```
 
-## 5.5 Academic visualization suite
+## 5.5 Result visualizations
 
-epiPortrait provides a set of publication-oriented plots that directly
-visualise the core method results (Intensity x native-breadth architecture,
-replicate support and condition architecture transitions):
+The plotting functions summarize Intensity versus native breadth, replicate
+support, and condition-level state transitions:
 
 ```{r academic-viz, fig.width = 8, fig.height = 6}
 se_viz <- call_super_domains(example_se, feature = "Intensity",
@@ -530,8 +536,8 @@ plot_hockey_stick(se_viz, feature = "Intensity", group = "Control",
                   label_genes = FALSE)
 ```
 
-The landscape is the package signature figure: each domain in the
-Intensity x native-breadth plane, coloured by architecture class (pass
+The landscape places each domain in the Intensity by native-breadth plane and
+colours it by architecture class (pass
 `label_n > 0` to name the most representative domain of each super class).
 The transition matrix expresses a **relative** architecture-state change
 (per-group cutoffs) — it must not be read as absolute gain/loss. Because
@@ -542,8 +548,8 @@ composition.
 
 ## 5.6 Saving and reusing an analysis
 
-The SummarizedExperiment is the scientific record. Save it once, then export
-flat tables or re-plot from the object without re-running BigWig I/O:
+Save the `SummarizedExperiment` to preserve the assays, calls, and provenance.
+Flat tables and plots can then be regenerated without repeating BigWig I/O:
 
 ```{r save-analysis}
 f <- tempfile(fileext = ".rds")
@@ -581,29 +587,27 @@ se_diff <- analyze_differential_domains(
 table(rowData(se_diff)$Intensity_DiffStatus)   # Gain / Loss / NS
 ```
 
-Arbitrary designs (paired, batch-corrected, multi-factor) are supported via
-`design` + `contrast`:
+Paired, blocked, and multi-factor designs are supported through `design` and a
+valid design coefficient or contrast:
 
 ```{r differential2, eval=FALSE}
 se_diff <- analyze_differential_domains(
   se_diff, feature = "Intensity",
-  design  = ~ 0 + Condition + Batch,
-  contrast = c(ConditionTreatment = "ConditionTreatment", ...))
+  # Patient and Condition must be columns of colData(se_diff)
+  design = ~ Patient + Condition,
+  contrast = "ConditionTreatment")
 ```
 
-The volcano view uses the package publication palette and can label the top
-domains:
+The volcano plot can label the top-ranked domains:
 
 ```{r differential-viz}
 plot_differential_volcano(se_diff, feature = "Intensity", label_n = 5)
 ```
 
-**Scope caveat.** The test is on log-transformed integrated continuous signal
-(not raw fragment counts) — a defensible approximation for BigWig-native
-workflows. It requires >=2 replicates per group (limma residual-variance
-estimation). For exact DESeq2/DiffBind-style count statistics, obtain
-per-domain counts externally; epiPortrait provides the coordinate universe and
-the continuous phenotype layer for that workflow.
+**Scope caveat.** The test uses log-transformed integrated continuous signal,
+not raw fragment counts. The simple two-group design requires at least two
+samples per group to estimate residual variance. For count-based inference,
+obtain per-domain counts and use DiffBind, csaw, edgeR, or DESeq2.
 
 ## 5.8 Score-aware BEDPE/3D annotation
 
@@ -651,9 +655,9 @@ get_domain_genes(se_bp, rank_by = "bedpe_score")    # dominant-loop-first priori
 - Semantics: no BEDPE evidence → `0`; evidence without a usable score (or a run
   without `bedpe_score_col`) → `NA`, so "no 3D evidence" and "unscored 3D
   evidence" stay distinguishable.
-- `get_domain_genes(rank_by = "bedpe_score")` prioritizes candidate genes by
-  descending contact strength (dominant-loop-style assignment), with the
-  evidence tier and expression as tie-breakers.
+- `get_domain_genes(rank_by = "bedpe_score")` ranks candidate genes by
+  descending contact strength, with evidence tier and expression as
+  tie-breakers. This ranking does not establish a causal target gene.
 
 ## 5.9 Per-sample time-course transitions
 
@@ -680,22 +684,21 @@ head(rowData(se_ps)$Intensity_SampleTransition__Control_1_vs_Treatment_1)
 Labels match `compare_superdomain_classes()` semantics:
 `Persistent_<state>`, `<from>_to_<to>`, and `Uncertain` when either time point
 has a no-call / unreliable call. Omit `ref` to compute all ordered time-point
-pairs.
+pairs. With one sample per time point these transitions are descriptive; they
+do not estimate biological variability.
 
 # Module 6: Mark-Specific Interpretation
 
-The quantitative engine is mark-independent: every mark is measured on the
-same Intensity × native-Breadth axes and classified into the same internal
-taxonomy. What changes with the mark is the **biological interpretation** of
-those states.
+The same calculations can be applied across marks, but the biological meaning
+of the resulting labels changes with the mark.
 
 ## 6.1 H3K4me3: promoter breadth and transcriptional state
 
-Broad H3K4me3 promoter domains are associated with stable transcriptional
-programs, cell-identity genes, and cancer-associated redistribution. With
-`epiPortrait`, ask whether a broad promoter is also intensity-extreme, whether
-cancer-associated broadening occurs without signal gain, and whether shortening
-precedes or accompanies intensity loss:
+Broad H3K4me3 domains have been associated with cell-identity genes and
+transcriptional consistency ([Benayoun *et al.*,
+2014](https://doi.org/10.1016/j.cell.2014.06.027)). With `epiPortrait`, one can
+test whether a broad promoter is also intensity-extreme and whether a breadth
+change accompanies an intensity change:
 
 - `Breadth` captures broad promoter domains;
 - `Intensity` captures high-magnitude promoters;
@@ -706,8 +709,8 @@ known breadth biology into separable quantitative remodeling modes.
 
 ## 6.2 H3K27ac: enhancer-domain magnitude versus regulatory territory
 
-A high-ranking enhancer can be strong because of concentrated signal, because
-it spans a broad regulatory territory, or because both occur together.
+A high-ranking enhancer domain can have concentrated signal, a broad native
+enriched span, or both.
 `Intensity-Super`, `Breadth-Super`, and `Dual-Super` express these enhancer
 domain phenotypes. For an optional head-to-head comparison with the ROSE
 super-enhancer pipeline, use `method = "tangent"` with `log_transform = FALSE`
@@ -734,19 +737,19 @@ Organize your analysis around the biological question rather than the mark:
 | Differentiation / lineage | State A → State B | state reorganization along the trajectory |
 | Cohort recurrence | Independent patients / cell-line models | cross-sample recurrence of a domain phenotype |
 
-For cohort-style datasets, independent patients are **population-level
-recurrence evidence, not experimental replicates of a single sample**. Use a
-permissive support rule (e.g. `min_replicate_support` tuned to the intended
-recurrence threshold, or `support_rule = "all"` when each condition has a
-single patient).
+For cohort-style datasets, independent patients provide population-level
+recurrence evidence, not repeated measurements of one biological sample.
+Report the support denominator and choose the threshold to match the recurrence
+question. With one sample per condition, use `mode = "per_sample"` rather than
+making a group-level support claim.
 
-## 6.5 Cross-mark integration: two axes from two mark-specific objects
+## 6.5 Cross-mark integration across domain universes
 
-A single SE carries one mark. When the biological question needs both axes —
-e.g. H3K27ac Intensity-Super enhancers *and* H3K4me3 Breadth-Super promoters —
-the two objects **need not share the same domain universe** (different
-stitching, different promoter filtering). `integrate_cross_mark()` overlays the
-second mark's per-sample calls onto the first mark's domains:
+A `SummarizedExperiment` object represents one mark. When an analysis combines
+H3K27ac Intensity-Super enhancer domains with H3K4me3 Breadth-Super promoter
+domains, the objects need not share a domain universe. Stitching and promoter
+filtering may differ by mark. `integrate_cross_mark()` projects calls from one
+object onto overlapping domains in the other:
 
 ```{r cross-mark, eval=FALSE}
 # se_h3k27ac carries Intensity_Call__<tp>; se_h3k4me3 carries Breadth_Call__<tp>
@@ -767,9 +770,8 @@ rowData(se_h3k4me3)$Intensity_NOverlaps__4h      # # overlapping H3K27ac domains
 - Domains with no overlap in B stay `NA` for the overlaid call, flagging the
   two-universe "boundary" regions (e.g. promoter-proximal enhancers that the
   enhancer-mark pipeline's ROSE-style promoter filter deliberately excludes).
-- This enables the two-axis boundary-rescue workflow: promoter-proximal
-  regions absent from an enhancer-mark universe can still be assessed on the
-  promoter-mark's breadth axis.
+- Promoter-proximal regions absent from an enhancer-mark universe can therefore
+  remain represented in the promoter-mark object.
 
 ## 6.6 Interpretation guardrails
 
@@ -795,6 +797,12 @@ with coverage gaps are downward-biased; prefer tracks with complete, consistent
 coverage across the analyzed region set and check the
 `ZeroFraction` / `NegativeFraction` QC columns from
 `check_signal_compatibility()`.
+
+CPM and RPGC normalize library scale but do not correct a true global change in
+histone-mark occupancy. Use spike-in controls when absolute global changes are
+part of the biological claim, or restrict interpretation to relative
+within-dataset ranks. Native breadth also depends on sequencing depth, peak
+caller, and caller parameters; keep these choices constant across samples.
 
 ### 6.7.1 Mark-aware preset workflow (e.g. H3K27me3)
 
@@ -866,10 +874,10 @@ metadata(se_boot)$superdomain_calls$Intensity$cutoff_stability_interval
 |:--------|:-------------|:----|
 | `Feature 'X' not found` | Feature name typo | Use `assayNames(se)` / `colnames(rowData(se))` |
 | `Breadth requires native peaks` | `feature = "Breadth"` without `peak_path` in the sample sheet | Re-run `build_portrait_matrix()` with per-sample native peak files |
-| Negative-signal error | BigWig contains negative values | Provide non-negative (CPM/RPGC/spike-in) tracks or `negative_policy = "clip_zero"` |
+| Negative-signal error | BigWig contains negative values | Prefer a compatible non-negative track. Use `negative_policy = "clip_zero"` only when negative values are known technical artefacts, and report that choice. |
 | `Constant feature values` | All domains identical for a feature (e.g., `IntervalWidth` in a single-sample set) | Use a dynamic feature like `Intensity` |
 | Super count unexpectedly high | log-transformed scale + tangent | Try `log_transform = FALSE` |
-| No reliable inflection (`no_call`) | Curve lacks a clear break | **Intensity:** consider an explicit `quantile_cutoff` (top fraction of ranked domain values) or inspect the hockey-stick plot. **Breadth:** `quantile_cutoff` is available as an explicit top-fraction opt-in on the genome-wide native PeakWidth distribution (no quality gate — the user owns the QC choice); the default data-driven path keeps no-call as no-call, and the two paths never auto-fall-back to each other |
+| No reliable inflection (`no_call`) | Curve lacks a clear break | Inspect the hockey-stick plot. If a fixed top fraction is scientifically justified, set `quantile_cutoff` and report it; this option does not assess cutoff quality. The default data-driven path retains `no_call` and never switches automatically. |
 
 # Session Info
 

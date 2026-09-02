@@ -8,20 +8,26 @@
 [![License: GPL (\>=
 3)](https://img.shields.io/badge/License-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Lifecycle:
-stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html)
+experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html)
 
 ------------------------------------------------------------------------
 
-**epiPortrait asks not only whether an epigenomic domain changes, but how it changes.**
+**epiPortrait describes signal and native peak breadth on a shared set of
+genomic domains.**
 
 Conventional epigenomic workflows are highly effective at identifying peaks and
 differential enrichment, but a regulatory domain can remodel through distinct
 quantitative modes: its signal can become stronger, its native enriched
 territory can become broader, or both can occur together.
 
-epiPortrait provides a replicate-aware framework that separates **integrated
-signal magnitude (Intensity)** from **replicate-specific native peak breadth**,
-and follows how these domain states remodel across biological conditions.
+epiPortrait measures **integrated signal (Intensity)** and
+**replicate-specific native peak breadth** separately, then summarizes their
+support and transitions across biological conditions.
+
+Here, *replicate-aware* means that samples are called separately before their
+calls are aggregated with a stated support rule. It does not mean that the
+rank-based calls model between-replicate variance. Continuous-signal inference
+is available separately through `analyze_differential_domains()`.
 
 ------------------------------------------------------------------------
 
@@ -36,17 +42,20 @@ Domain A: high, focal signal
 Domain B: moderate signal spread across a broad enriched territory
 ```
 
-Likewise, two equally broad domains can differ strongly in total activity.
+Likewise, two equally broad domains can differ strongly in total signal.
 When a region is summarized by a single ranking statistic, these distinct
-regulatory states are conflated.
+signal geometries are conflated.
 
 epiPortrait therefore separates **signal magnitude** from **native breadth
 geometry**, and asks whether each state is reproducibly supported across
 biological replicates.
 
 **Methodological focus.** epiPortrait does not propose that domain breadth is
-itself a new biological concept — broad H3K4me3 promoter domains and
-super-enhancer width have an established literature. Its contribution is to
+itself a new biological concept—broad H3K4me3 domains
+([Benayoun *et al.*, 2014](https://doi.org/10.1016/j.cell.2014.06.027)) and
+stitched H3K27ac super-enhancers
+([Whyte *et al.*, 2013](https://doi.org/10.1016/j.cell.2013.03.035)) have an
+established literature. Its contribution is to
 place conventional native-domain breadth and continuous signal magnitude into
 a **unified replicate-aware framework**, preserve their distinct evidence
 sources, and convert them into interpretable condition-specific domain
@@ -56,8 +65,10 @@ phenotypes and remodeling states.
 
 ### 1. Two separable canonical phenotype axes
 
-`Intensity` and native `Breadth` are treated as independent quantitative
-properties, not merged into one rank.
+`Intensity` and native `Breadth` are computed and thresholded separately rather
+than merged into one rank. They are not assumed to be statistically
+independent: integrated signal can increase with both signal amplitude and the
+length of the analysed interval.
 
 | Axis | Measures | Canonical class |
 |:-----|:---------|:----------------|
@@ -80,17 +91,17 @@ width expansion / contraction is tracked separately.
 
 ### 4. Mark-aware interpretation
 
-The same quantitative engine serves active enhancer domains (H3K27ac), broad
+The same calculations can be applied to active enhancer domains (H3K27ac), broad
 promoter domains (H3K4me3), and broad repressive chromatin
 (H3K27me3 / H3K9me3), with biological terminology adapted per mark.
 
-> **The quantitative framework is mark-independent, while biological
-> interpretation is mark-aware.**
+The calculations are mark-independent, but their biological interpretation is
+not.
 
 ## How do domains combine the two axes?
 
-Each domain is classified independently on the two axes; their combination
-gives the four architecture states:
+Each domain is classified separately on the two axes; their combination gives
+four architecture states:
 
 ```text
                        BREADTH-SUPER (broad native geometry)
@@ -121,28 +132,26 @@ gives the four architecture states:
 | Which are both strong and broad? | `Dual-Super` |
 | Is the call reproducible across replicates? | replicate support / `Uncertain` |
 | How does a domain change between conditions? | class transition |
-| Is a domain expanding or contracting? | width transition |
+| Does measured native breadth increase or decrease? | width transition |
 | How is signal spatially organized inside the domain? | `SignalDispersion` |
 | Which genes are spatially associated with the domain? | annotation / candidate links |
 
 **Representative applications.** Broad-promoter remodeling (H3K4me3:
 intensity gain vs breadth expansion vs coupled change; normal → cancer,
 differentiation, drug perturbation). Active enhancer / super-enhancer
-architecture (H3K27ac: intensity-dominant vs breadth-dominant vs dual-extreme;
+architecture (H3K27ac: intensity-extreme vs breadth-extreme vs dual-extreme;
 oncogenic enhancer acquisition, drug response, lineage switching). Repressive
 domain remodeling (H3K27me3 / H3K9me3: expansion/contraction, with
 mark-appropriate surface labels). Perturbation and therapy resistance
 (Control → drug, Sensitive → Resistant, WT → KO), where epiPortrait describes
-*how* the state organization changes rather than only a signal log-fold-change.
+the form of the state change in addition to a signal log-fold-change.
 
-**Cohort-style studies.** When a condition comprises independent patients
-(e.g. three tumors of the same subtype), the support machinery summarizes
-**cross-patient recurrence**: the same support rules report how consistently a
-domain phenotype is shared across patients. These are **not** experimental
-replicates of a single sample — interpret them as population-level recurrence,
-and use a permissive support rule (e.g. `"all"` with a single patient per
-condition, or `min_replicate_support` tuned to the intended recurrence
-threshold).
+**Cohort-style studies.** When a condition comprises independent patients, the
+support fraction describes cross-patient recurrence rather than technical or
+within-subject replication. Choose the support rule to match the recurrence
+question and report the number of contributing patients. With one sample per
+condition, use `mode = "per_sample"`; a group-level support claim is not
+available.
 
 ## Relationship to existing methods
 
@@ -174,6 +183,23 @@ domain caller and boundary quality. `SignalDispersion` describes spatial
 signal organization, not physical chromatin conformation. Annotated
 nearest/overlapping genes are candidates, not causal targets.
 
+All `Super` labels are relative to the analysed candidate-domain universe and
+the selected cutoff. They do not by themselves establish a functional
+super-enhancer. Integrated Intensity is an area under the signal track and is
+therefore affected by interval length. CPM or RPGC corrects library scale but
+does not establish absolute comparability when a perturbation causes a global
+occupancy shift; spike-in normalization or appropriately qualified relative
+interpretation is then required. Use the same peak caller and parameters across
+samples because sequencing depth and boundary calling affect native breadth.
+The candidate-domain construction rule is also part of the analysis: report
+`min_reps`, promoter filtering, and stitching, and assess condition-specific
+domains when they are central to the biological question.
+
+Direct local BigWig import uses the `rtracklayer` UCSC backend, which is not
+available on Windows. Windows users can build the `SummarizedExperiment` on
+Linux or macOS, save it with `saveRDS()`, and run downstream calling,
+annotation, and visualization on Windows.
+
 ------------------------------------------------------------------------
 
 ## Installation
@@ -185,7 +211,8 @@ BiocManager::install(c(
   "org.Hs.eg.db", "org.Mm.eg.db"
 ))
 
-devtools::install_github("zying106/epiPortrait", build_vignettes = TRUE)
+if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
+remotes::install_github("zying106/epiPortrait", build_vignettes = TRUE)
 ```
 
 ------------------------------------------------------------------------
@@ -252,11 +279,14 @@ library(epiPortrait)
 samples <- data.frame(
   SampleID  = c("Ctrl_1", "Ctrl_2", "Ctrl_3", "Treat_1", "Treat_2", "Treat_3"),
   Condition = c("Control", "Control", "Control", "Treatment", "Treatment", "Treatment"),
-  bw_path   = c("ctrl1.bw", "ctrl2.bw", "ctrl3.bw", "treat1.bw", "treat2.bw", "treat3.bw")
+  bw_path   = c("ctrl1.bw", "ctrl2.bw", "ctrl3.bw", "treat1.bw", "treat2.bw", "treat3.bw"),
+  peak_path = c("ctrl1.bed", "ctrl2.bed", "ctrl3.bed",
+                "treat1.bed", "treat2.bed", "treat3.bed")
 )
 
 # 2. Get consensus peaks from your peak files
-# consensus_peaks <- get_consensus_peaks(peak_list, min_reps = 2)
+peak_list <- lapply(samples$peak_path, rtracklayer::import)
+consensus_peaks <- get_consensus_peaks(peak_list, min_reps = 2)
 
 # 3. Optionally stitch proximal peaks into macro-domains
 # macro_domains <- stitch_epi_peaks(consensus_peaks, stitch_distance = 12500)
@@ -366,8 +396,8 @@ For a single-condition study (no `Condition` grouping), the default
 with the ROSE super-enhancer pipeline (Whyte et al., 2013), use
 `method = "tangent"` with `log_transform = FALSE` (raw signal, ROSE-style
 scale). This is an optional benchmark setting, not the package's primary
-workflow; the core value of epiPortrait is the Intensity × native-Breadth
-decomposition with replicate support, not ROSE reproduction.
+workflow. Use the reference ROSE implementation for claims about numerical
+agreement with ROSE.
 
 **Breadth-Super is a peak-level call.** Each replicate's genome-wide eligible
 native PeakWidth distribution is cut by an elbow/inflection; broad peaks are
@@ -403,9 +433,9 @@ The default `cutoff_scope = "relative"` calls each group with its own cutoff;
 the output classes `Relative_Prominence_Up` / `Relative_Prominence_Down`
 express a *relative rank-state* change and must **not** be interpreted as
 absolute signal gain/loss. Use `cutoff_scope = "reference"` or `"pooled"` for
-a common-threshold `Gain` / `Loss` interpretation (only valid when the BigWigs
-are quantitatively comparable). `Uncertain` is assigned when a group call was
-not reliable.
+a common-scale `Gain` / `Loss` label when the BigWigs are quantitatively
+comparable. These labels still do not establish an absolute biochemical
+change. `Uncertain` is assigned when a group call was not reliable.
 
 ### Module 4: Annotation & Visualization
 
@@ -413,6 +443,11 @@ not reliable.
 # Domain-aware annotation (nearest TSS / promoter / gene-body / contained)
 se <- annotate_epi_domains(se, genome = "hg38")
 candidates <- get_domain_genes(se, group = "Control")
+
+# One row per domain, one row per domain-gene pair, and raw relationship detail
+head(metadata(se)$annotation_summary)
+head(metadata(se)$domain_gene_links_dedup)
+head(metadata(se)$domain_gene_links)
 
 # Hockey-stick ranking plot
 se <- call_super_domains(se, feature = "Intensity")
@@ -425,6 +460,36 @@ plot_domain_feature_profile(se, peak_id = rownames(se)[1], group_var = "Conditio
 plot_portrait_pca(se, feature = "Intensity", group_var = "Condition")
 plot_portrait_correlation(se, feature = "Intensity")
 ```
+
+### Module 4.5: Differential Domain Analysis
+
+`compare_superdomains()` reports changes between rank-based states.
+`analyze_differential_domains()` instead fits a limma model to log-transformed
+continuous signal:
+
+``` r
+se <- analyze_differential_domains(
+  se, feature = "Intensity",
+  ref_group = "Control", target_group = "Treatment")
+table(rowData(se)$Intensity_DiffStatus)
+
+plot_differential_volcano(se, feature = "Intensity", label_n = 10)
+```
+
+For a paired or blocked design, include the blocking variable in the model and
+specify a valid design coefficient:
+
+``` r
+se <- analyze_differential_domains(
+  se, feature = "Intensity",
+  design = ~ Patient + Condition,
+  contrast = "ConditionTreatment")
+```
+
+This is a limma analysis of normalized continuous track values, not a
+fragment-count model. Use per-domain counts with DiffBind, csaw, edgeR, or
+DESeq2 when count-based inference is required. Simple two-group models need
+replication to estimate residual variance.
 
 ------------------------------------------------------------------------
 
@@ -466,7 +531,7 @@ Issues and feature requests:
 ## Citation
 
 > ZHANG Y. (2026). *epiPortrait: Replicate-Aware Epigenomic Domain Profiling*.
-> R package version 0.99.0.
+> R package version 0.99.1.
 > <https://github.com/zying106/epiPortrait>
 
 The canonical citation is stored in `inst/CITATION` and can be retrieved
@@ -478,7 +543,7 @@ above mirrors it.
   title  = {epiPortrait: Replicate-Aware Epigenomic Domain Profiling},
   author = {Ying ZHANG},
   year   = {2026},
-  note   = {R package version 0.99.0},
+  note   = {R package version 0.99.1},
   url    = {https://github.com/zying106/epiPortrait}
 }
 ```

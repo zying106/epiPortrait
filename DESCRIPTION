@@ -20,15 +20,15 @@ Authors@R: c(
            email = "xuliang.phd@zju.edu.cn",
            comment = "This work is funded by the Fundamental Research Funds for the Central Universities (226-2025-00101) and the National Natural Science Foundation of China (32270746, 82203247, 82203415).")
   )
-Description: Provides a replicate-aware computational framework for
-    quantitative phenotyping and comparison of epigenomic domains from
+Description: Provides methods for replicate-aware quantitative phenotyping
+    and comparison of epigenomic domains from
     normalized continuous signal tracks and per-sample native peak/domain
     calls (histone-mark ChIP-seq / CUT&Tag as the primary use case; also
     applicable to ATAC-seq-derived domains). It characterizes each shared
     genomic domain by integrated signal magnitude (Intensity),
     sample-specific native peak breadth geometry, and continuous
     within-domain signal architecture (SignalDispersion). Replicate-level
-    evidence is retained explicitly and aggregated with transparent support
+    evidence is retained and aggregated with specified support
     rules, enabling condition-specific classification of Intensity-Super,
     Breadth-Super, Dual-Super, Typical, or Uncertain domain states without
     using the consensus-domain width as the breadth caller. The package
@@ -37,7 +37,7 @@ Description: Provides a replicate-aware computational framework for
     three-level export (per-domain summary, per-domain-gene pair, and raw
     relationship detail), optional BEDPE contact evidence, expression-aware
     candidate-gene prioritization, differential domain analysis on continuous
-    BigWig signal (limma), and publication-oriented visualization.
+    BigWig signal using limma, and result visualization.
 License: GPL (>= 3) + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
