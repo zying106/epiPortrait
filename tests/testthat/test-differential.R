@@ -284,3 +284,24 @@ test_that("non-contiguous min_signal filter maps results to correct rows", {
     expect_equal(rd$Intensity_logFC[hi[k]], tt_man$logFC[k], tolerance = 1e-10)
   }
 })
+
+# ---- review coverage: validation error paths (lines 115, 118, 127, 130, 142) -----
+test_that("differential validates input: missing feature / samples / group / ref", {
+  se <- make_diff_se()
+  expect_error(analyze_differential_domains(se, feature = "BOGUS",
+    group_var = "Condition", ref_group = "Nor", target_group = "Tum"),
+    "not found in assays")
+  expect_error(analyze_differential_domains(se[, 1, drop = FALSE],
+    feature = "Intensity", group_var = "Condition",
+    ref_group = "Nor", target_group = "Tum"),
+    "at least 2 samples")
+  expect_error(analyze_differential_domains(se, feature = "Intensity",
+    group_var = "NONEXISTENT", ref_group = "Nor", target_group = "Tum"),
+    "not found in colData")
+  expect_error(analyze_differential_domains(se, feature = "Intensity",
+    group_var = "Condition", ref_group = NULL, target_group = NULL),
+    "provide ref_group")
+  expect_error(analyze_differential_domains(se, feature = "Intensity",
+    group_var = "Condition", ref_group = "NONEXISTENT", target_group = "Tum"),
+    "not found in group_var")
+})

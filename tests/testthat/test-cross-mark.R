@@ -175,3 +175,48 @@ test_that("integrate_cross_mark is strand-agnostic and rejects assembly mismatch
   expect_error(integrate_cross_mark(a, b, timepoints = c("t0", "t1")),
                "different genome assemblies")
 })
+
+# ---- review coverage: cross-mark genome-mismatch + no-shared-timepoints -----
+test_that("integrate_cross_mark validates genome compatibility", {
+  se_a <- SummarizedExperiment::SummarizedExperiment(
+    rowRanges = GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 1000)),
+    colData = S4Vectors::DataFrame(TimePoint = c("t1","t2"),
+                                    Condition = c("A","B"),
+                                    Genome = c("hg19","hg19")))
+  SummarizedExperiment::rowData(se_a)[["Breadth_Call__t1"]] <- "Breadth_Super_Element"
+  SummarizedExperiment::rowData(se_a)[["Breadth_Call__t2"]] <- "Breadth_Typical"
+
+  se_b <- SummarizedExperiment::SummarizedExperiment(
+    rowRanges = GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 1000)),
+    colData = S4Vectors::DataFrame(TimePoint = c("t2"), Condition = c("A"),
+                                    Genome = c("hg38")))
+  SummarizedExperiment::rowData(se_b)[["Intensity_Call__t2"]] <- "Intensity_Super_Element"
+  # mismatched genomes -> error
+  expect_error(integrate_cross_mark(se_a, se_b,
+    call_fmt_a = "Breadth_Call__%s", call_fmt_b = "Intensity_Call__%s"),
+    "different genome")
+})
+
+test_that("integrate_cross_mark rejects non-SE and same-mark inputs", {
+  se_a <- SummarizedExperiment::SummarizedExperiment(
+    rowRanges = GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 1000)),
+    colData = S4Vectors::DataFrame(TimePoint = c("t1"), Condition = c("A")))
+  SummarizedExperiment::rowData(se_a)[["Breadth_Call__t1"]] <- "Breadth_Super_Element"
+  expect_error(integrate_cross_mark(99, se_a,
+    call_fmt_a = "Breadth_Call__%s", call_fmt_b = "Intensity_Call__%s"),
+    "SummarizedExperiment")
+  expect_error(integrate_cross_mark(se_a, se_a,
+    call_fmt_a = "Breadth_Call__%s", call_fmt_b = "Breadth_Call__%s",
+    mark_a = "Breadth", mark_b = "Breadth", timepoints = "t1"),
+    "same call prefix")
+})
+
+test_that("call_super_domains validates min_quality and n_bootstrap", {
+  data(example_se, package = "epiPortrait")
+  expect_error(call_super_domains(example_se, feature = "Intensity",
+    mode = "per_sample", min_quality = NaN),
+    "min_quality must be")
+  expect_error(call_super_domains(example_se, feature = "Intensity",
+    mode = "per_sample", n_bootstrap = 2.5),
+    "n_bootstrap must be NULL")
+})
