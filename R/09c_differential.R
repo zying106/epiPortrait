@@ -133,7 +133,11 @@ analyze_differential_domains <- function(se,
     idx <- meta[[group_var]] %in% c(ref_group, target_group)
     se  <- se[, idx]
     meta <- as.data.frame(colData(se))
-    m  <- meta[[group_var]]
+    # Drop unused factor levels after selecting the requested comparison.
+    # Otherwise a legitimate factor with levels A/B/C, subset to A/B, retains
+    # C=0 and is falsely rejected by the replicate-count check below.
+    m <- factor(as.character(meta[[group_var]]),
+                levels = c(ref_group, target_group))
     if (!ref_group %in% m || !target_group %in% m) {
       stop("ref_group / target_group not found in group_var.", call. = FALSE)
     }
@@ -146,7 +150,7 @@ analyze_differential_domains <- function(se,
            "Use a single-sample descriptive analysis or provide replicates.",
            call. = FALSE)
     }
-    grp <- factor(m, levels = c(ref_group, target_group))
+    grp <- m
     design_used <- stats::model.matrix(~ grp)
     # coefficient for target_group: "grp<target>" (raw label, e.g. grp72h)
     tgt_col <- colnames(design_used)[

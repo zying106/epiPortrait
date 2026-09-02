@@ -124,6 +124,59 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
     stop(paste("The following BigWig files do not exist:", paste(missing_files, collapse = ", ")))
   }
 
+  # Genome assembly is an experimental condition, not decorative metadata.
+  # When supplied, require one explicit assembly across every sample and carry
+  # it into the object contract for downstream cross-object integration.
+  genome_id <- NULL
+  if ("Genome" %in% colnames(sample_sheet)) {
+    gv <- as.character(sample_sheet$Genome)
+    if (anyNA(gv) || any(!nzchar(gv))) {
+      stop("Genome must be non-missing and non-empty for every sample when the ",
+           "column is supplied.")
+    }
+    gu <- unique(gv)
+    if (length(gu) != 1L) {
+      stop("All samples must use the same genome assembly. Found: ",
+           paste(gu, collapse = ", "), ".")
+    }
+    genome_id <- gu
+  }
+
+  if (!inherits(consensus_peaks, "GRanges")) {
+    stop("consensus_peaks must be a GRanges object.")
+  }
+  if (length(consensus_peaks) == 0L) {
+    stop("consensus_peaks is empty; provide at least one candidate domain.")
+  }
+
+  # Header-level chromosome compatibility. A region absent from a BigWig is
+  # represented by zero coverage by the sparse import path, so without this
+  # check a chr/build mismatch can silently become biological low signal.
+  domain_seqlevels <- unique(as.character(GenomicRanges::seqnames(consensus_peaks)))
+  for (i in seq_len(nrow(sample_sheet))) {
+    bw_sl <- tryCatch({
+      si <- GenomeInfoDb::seqinfo(rtracklayer::BigWigFile(sample_sheet$bw_path[i]))
+      as.character(GenomeInfoDb::seqlevels(si))
+    }, error = function(e) character(0))
+    # If the upstream library cannot read the header, defer to the ordinary
+    # import error path below (also keeps mocked unit tests independent of I/O).
+    if (length(bw_sl) == 0L) next
+    shared <- intersect(domain_seqlevels, bw_sl)
+    if (length(shared) == 0L) {
+      stop("No shared seqlevels between consensus_peaks and BigWig '",
+           sample_sheet$bw_path[i], "'. Check genome build and chromosome ",
+           "naming (for example chr1 vs 1).")
+    }
+    missing_sl <- setdiff(domain_seqlevels, bw_sl)
+    if (length(missing_sl) > 0L) {
+      warning(sprintf(
+        "BigWig '%s' lacks %d/%d candidate-domain seqlevels (%s); domains on those seqlevels would otherwise be read as zero signal.",
+        basename(sample_sheet$bw_path[i]), length(missing_sl),
+        length(domain_seqlevels), paste(utils::head(missing_sl, 5),
+                                       collapse = ", ")), call. = FALSE)
+    }
+  }
+
   # Native peak files are OPTIONAL. When absent for a sample, native breadth
   # geometry is NA and that sample cannot contribute to Breadth-Super calling.
   # has_peaks is ALWAYS a per-sample logical vector (length = nrow(sample_sheet))
@@ -223,6 +276,14 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
       if (!is.na(peak_path)) {
         native_peaks <- rtracklayer::import(peak_path)
         if (length(native_peaks) == 0) native_peaks <- NULL
+        if (!is.null(native_peaks)) {
+          native_sl <- unique(as.character(GenomicRanges::seqnames(native_peaks)))
+          if (length(intersect(domain_seqlevels, native_sl)) == 0L) {
+            stop("No shared seqlevels between consensus_peaks and native peak ",
+                 "file '", peak_path, "'. Check genome build and chromosome ",
+                 "naming (for example chr1 vs 1).")
+          }
+        }
       }
       native_geom <- if (!is.null(native_peaks)) {
         .native_peak_geometry(native_peaks, consensus_peaks)
@@ -488,7 +549,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
     required_signal = "normalized non-negative continuous signal",
     negative_policy = negative_policy,
     native_peaks = if (any(has_peaks)) "provided (per-sample peak files)" else "not provided",
-    fail_action = fail_action
+    fail_action = fail_action,
+    genome = genome_id
   )
   # Domain-source / caller provenance (heterochromatin plan 2026-08-10):
   # broad repressive marks (H3K27me3/H3K9me3) rely on upstream broad-domain

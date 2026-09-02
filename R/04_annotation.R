@@ -652,7 +652,8 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
                                 function(x) paste(sort(unique(x)), collapse = ";")))
     # per-pair nearest TSS distance (min abs over the pair's nearest_tss rows)
     pair_dist <- unlist(lapply(split(links$distance_to_tss_bp, key), function(d) {
-      suppressWarnings(min(abs(d), na.rm = TRUE))
+      d <- stats::na.omit(d)
+      if (length(d) == 0) NA_real_ else min(abs(d))
     }))
     pair_dist[is.infinite(pair_dist) | is.na(pair_dist)] <- NA_real_
     # best relation per key: the element with the max tier, tie -> first
@@ -907,7 +908,7 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
     score_label <- sprintf("column %d%s", sidx,
                            if (!is.null(colnames(tab)))
                              paste0(" (", colnames(tab)[sidx], ")") else "")
-    score_vals <- suppressWarnings(as.numeric(tab[[sidx]]))
+    score_vals <- as.numeric(tab[[sidx]])
     # P1 (review §7): as.numeric("Inf") gives Inf, not NA; forcibly convert
     # ANY non-finite value (NA, NaN, Inf, -Inf) to NA so downstream sum/max/
     # mean/n never propagate Inf.
@@ -1272,8 +1273,10 @@ get_domain_genes <- function(se, domains = NULL,
     sum(s, na.rm = TRUE)
   }
   dist_min <- function(i) {
-    d <- suppressWarnings(min(abs(stats::na.omit(links$distance_to_tss_bp[i]))))
-    if (!is.finite(d)) NA_real_ else d
+    d <- stats::na.omit(links$distance_to_tss_bp[i])
+    if (length(d) == 0) return(NA_real_)
+    result <- min(abs(d))
+    if (!is.finite(result)) NA_real_ else result
   }
   out <- data.frame(
     domain_id = dom_part,

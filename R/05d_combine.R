@@ -300,7 +300,13 @@ compare_superdomain_classes <- function(se, ref_group, target_group) {
   }
   r <- rowData(se)[[rc]]
   t <- rowData(se)[[tc]]
-  tr <- ifelse(is.na(r) | is.na(t), "Uncertain",
+  # Combined calls encode abstention as the literal "Uncertain" whereas
+  # feature-level no-calls use NA. Both representations are uncertainty and
+  # must never become apparent biological transitions such as
+  # Uncertain_to_Typical.
+  r_uncertain <- is.na(r) | r == "Uncertain"
+  t_uncertain <- is.na(t) | t == "Uncertain"
+  tr <- ifelse(r_uncertain | t_uncertain, "Uncertain",
                ifelse(r == t, paste0("Persistent_", r),
                       paste0(r, "_to_", t)))
   # Relative architecture-state transition: combined classes come from

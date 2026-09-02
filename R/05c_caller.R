@@ -185,6 +185,29 @@ call_super_domains <- function(se, feature = "Intensity",
   method <- match.arg(method, c("elbow", "tangent"))
   support_rule <- match.arg(support_rule)
   tie_policy <- match.arg(tie_policy)
+  if (length(min_quality) != 1L || !is.numeric(min_quality) ||
+      !is.finite(min_quality) || min_quality < 0 || min_quality > 1) {
+    stop("min_quality must be a finite number in [0, 1].")
+  }
+  if (!is.null(n_bootstrap) &&
+      (length(n_bootstrap) != 1L || !is.numeric(n_bootstrap) ||
+       !is.finite(n_bootstrap) || n_bootstrap < 1 ||
+       n_bootstrap != floor(n_bootstrap))) {
+    stop("n_bootstrap must be NULL or a positive integer.")
+  }
+  if (!is.null(seed) &&
+      (length(seed) != 1L || !is.numeric(seed) || !is.finite(seed) ||
+       seed != floor(seed))) {
+    stop("seed must be NULL or one finite integer.")
+  }
+  if (!is.null(min_valid_replicates) &&
+      (length(min_valid_replicates) != 1L ||
+       !is.numeric(min_valid_replicates) ||
+       !is.finite(min_valid_replicates) ||
+       min_valid_replicates < 1 ||
+       min_valid_replicates != floor(min_valid_replicates))) {
+    stop("min_valid_replicates must be NULL or a positive integer.")
+  }
   # Freeze review 2026-08-11: min_replicate_support must be a finite fraction
   # in (0, 1] when support_rule = "fraction". 0 would set required = 0 (every
   # domain Super); > 1 or NA silently breaks ceiling(fraction * n).
@@ -933,5 +956,4 @@ call_super_domains <- function(se, feature = "Intensity",
   }
   peaks[ok]
 }
-
 

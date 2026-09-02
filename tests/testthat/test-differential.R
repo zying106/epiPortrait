@@ -38,6 +38,15 @@ test_that("analyze_differential_domains errors on <2 replicates per group", {
     "needs >=2 replicates")
 })
 
+test_that("unused group factor levels do not invalidate a two-group fit", {
+  se <- make_diff_se(n_dom = 40, n_rep = 2)
+  colData(se)$Condition <- factor(colData(se)$Condition,
+                                  levels = c("Nor", "Tum", "Unused"))
+  res <- analyze_differential_domains(
+    se, ref_group = "Nor", target_group = "Tum", trend = FALSE)
+  expect_equal(S4Vectors::metadata(res)$differential_domains$n_tested, 40)
+})
+
 test_that("analyze_differential_domains stored provenance", {
   se <- make_diff_se()
   res <- analyze_differential_domains(se, ref_group = "Nor", target_group = "Tum")

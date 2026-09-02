@@ -84,9 +84,6 @@ integrate_cross_mark <- function(se_a, se_b,
     stop("min_overlap_bp must be a finite non-negative number.")
   }
 
-  .suffix_of <- function(fmt, tps) {
-    suppressWarnings(gsub(".*_Call__(%s|%d).*", "\\1", fmt))
-  }
   .derive_tps <- function(se, fmt) {
     pre <- sub("_Call__%s$", "", fmt)
     cols <- colnames(rowData(se))
@@ -123,6 +120,26 @@ integrate_cross_mark <- function(se_a, se_b,
 
   dom_a <- rowRanges(se_a)
   dom_b <- rowRanges(se_b)
+
+  # Chromosome names alone cannot establish coordinate compatibility: hg19
+  # and hg38 both commonly use chr1..chrY. Prefer the assembly recorded by
+  # build_portrait_matrix(), falling back to a unique colData Genome value.
+  .object_genome <- function(se) {
+    g <- S4Vectors::metadata(se)$signal_contract$genome
+    if (is.null(g) && "Genome" %in% colnames(colData(se))) {
+      g <- unique(stats::na.omit(as.character(colData(se)$Genome)))
+    }
+    g <- unique(as.character(g))
+    g[nzchar(g) & !is.na(g)]
+  }
+  genome_a <- .object_genome(se_a)
+  genome_b <- .object_genome(se_b)
+  if (length(genome_a) == 1L && length(genome_b) == 1L &&
+      !identical(genome_a, genome_b)) {
+    stop("se_a and se_b use different genome assemblies ('", genome_a,
+         "' vs '", genome_b, "'). Lift coordinates to one assembly before ",
+         "cross-mark integration.", call. = FALSE)
+  }
   sl_a <- unique(as.character(GenomicRanges::seqnames(dom_a)))
   sl_b <- unique(as.character(GenomicRanges::seqnames(dom_b)))
   shared <- intersect(sl_a, sl_b)
@@ -144,11 +161,15 @@ integrate_cross_mark <- function(se_a, se_b,
   out_super_b <- paste0(mark_b, "_Super_Element")
   out_typ_b   <- paste0(mark_b, "_Typical")
 
-  hits <- GenomicRanges::findOverlaps(dom_a, dom_b)
+  # Histone-mark / accessibility domains are genomic intervals rather than
+  # strand-specific transcript features. Explicitly ignore strand so GRanges
+  # imported from different sources behave consistently with BED intervals.
+  hits <- GenomicRanges::findOverlaps(dom_a, dom_b, ignore.strand = TRUE)
   if (min_overlap_bp > 0) {
     ovw <- GenomicRanges::width(
       GenomicRanges::pintersect(dom_a[S4Vectors::queryHits(hits)],
-                                dom_b[S4Vectors::subjectHits(hits)]))
+                                dom_b[S4Vectors::subjectHits(hits)],
+                                ignore.strand = TRUE))
     hits <- hits[ovw >= min_overlap_bp]
   }
 
@@ -305,7 +326,9 @@ transition_matrix_per_sample <- function(se, feature = NULL, call_fmt = NULL,
     if (length(r) != nrow(se) || length(t) != nrow(se)) {
       stop("Call columns must be length nrow(se).")
     }
-    tr <- ifelse(is.na(r) | is.na(t), "Uncertain",
+    r_uncertain <- is.na(r) | r == "Uncertain"
+    t_uncertain <- is.na(t) | t == "Uncertain"
+    tr <- ifelse(r_uncertain | t_uncertain, "Uncertain",
                  ifelse(r == t, paste0("Persistent_", r),
                         paste0(r, "_to_", t)))
     col <- sprintf("%s_SampleTransition__%s_vs_%s", prefix, r_tp, t_tp)

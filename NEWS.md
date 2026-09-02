@@ -1,3 +1,15 @@
+# epiPortrait 0.99.1
+
+* Made elbow calling orientation-aware so inverse/left-loaded ranked curves
+  produce `no_call` instead of an implausibly large Super set.
+* Propagated both `NA` and the explicit `Uncertain` class through combined and
+  per-sample transitions.
+* Fixed two-group limma analysis for grouping factors with unused levels.
+* Added genome/seqlevel compatibility checks for signal extraction and
+  cross-mark integration; epigenomic cross-mark overlaps are now explicitly
+  strand-agnostic.
+* Modernized the package citation and strengthened caller input validation.
+
 Changes in version 0.99.0 (2026-08-10)
 ---------------------------------------
 

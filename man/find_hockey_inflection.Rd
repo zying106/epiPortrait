@@ -28,7 +28,8 @@ retaining genuine inflection points.}
 A list with elements:
 \item{inflection_idx}{Index of the inflection point in the sorted vector.}
 \item{cutoff_value}{Feature value at the inflection point.}
-\item{quality_score}{Curve-prominence quality (0-1).}
+\item{quality_score}{Right-tail curve-prominence quality (0-1). A
+left-loaded / inverse hockey-stick curve has quality 0 and is not called.}
 \item{method}{The method used.}
 \item{call_status}{\code{"called"} or \code{"no_call"}.}
 \item{reason}{Reason for \code{"no_call"}, if any.}

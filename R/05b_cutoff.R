@@ -35,7 +35,8 @@
 #' @return A list with elements:
 #'   \item{inflection_idx}{Index of the inflection point in the sorted vector.}
 #'   \item{cutoff_value}{Feature value at the inflection point.}
-#'   \item{quality_score}{Curve-prominence quality (0-1).}
+#'   \item{quality_score}{Right-tail curve-prominence quality (0-1). A
+#'   left-loaded / inverse hockey-stick curve has quality 0 and is not called.}
 #'   \item{method}{The method used.}
 #'   \item{call_status}{\code{"called"} or \code{"no_call"}.}
 #'   \item{reason}{Reason for \code{"no_call"}, if any.}
@@ -47,6 +48,10 @@
 find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
                                    min_quality = 0.1, verbose = FALSE) {
   method <- match.arg(method)
+  if (length(min_quality) != 1L || !is.numeric(min_quality) ||
+      !is.finite(min_quality) || min_quality < 0 || min_quality > 1) {
+    stop("min_quality must be a finite number in [0, 1].", call. = FALSE)
+  }
   x <- x[is.finite(x)]
   n <- length(x)
 
@@ -78,7 +83,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     inflection_idx <- as.integer(floor(opt$minimum))
     inflection_idx <- min(max(inflection_idx, 1L), n)
   } else {
-    # elbow: perpendicular distance to the first-last line.
+    # elbow: SIGNED perpendicular distance below the first-last line.
     # Both coordinates are normalized to [0,1] (P1-7) so the geometry is
     # dimensionless and independent of the feature scale / sample size.
     # The first point maps to (0,0) and the last to (1,1); a perfectly linear
@@ -89,7 +94,11 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     # are (0,0) and (1,1) so slope = 1 exactly.
     slope <- (yr[n] - yr[1]) / max(xr[n] - xr[1], 1e-10)
     denom <- sqrt(slope^2 + 1)
-    perp <- abs(slope * xr - yr) / denom
+    # A valid ascending hockey stick has its middle ranks BELOW the endpoint
+    # line (xr - yr > 0) and then rises in the right tail. Do not use abs():
+    # it makes the mirror-image, left-loaded curve look equally prominent and
+    # can classify almost the entire universe as Super.
+    perp <- (slope * xr - yr) / denom
     inflection_idx <- which.max(perp)
   }
 
@@ -98,8 +107,10 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   xr0 <- (seq_len(n) - 1) / max(n - 1, 1)
   yr0 <- (xs - xs[1]) / max(xs[n] - xs[1], 1e-10)
   slope0 <- (yr0[n] - yr0[1]) / max(xr0[n] - xr0[1], 1e-10)
-  perp0 <- abs(slope0 * xr0 - yr0) / sqrt(slope0^2 + 1)
-  quality_score <- max(perp0)
+  perp0 <- (slope0 * xr0 - yr0) / sqrt(slope0^2 + 1)
+  # Endpoints are exactly zero. An inverse/left-loaded curve has no positive
+  # right-tail prominence, hence quality 0 rather than a large false score.
+  quality_score <- max(0, max(perp0))
 
   cutoff_value <- xs[inflection_idx]
   call_status <- "called"
@@ -251,8 +262,10 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     # stability interval and record how many resamples yielded a valid cutoff
     # (review #9).
     finite_idx <- is.finite(boot_cutoffs)
-    cutoff_stability_interval <- stats::quantile(
-      boot_cutoffs[finite_idx], probs = c(0.025, 0.975), na.rm = TRUE)
+    cutoff_stability_interval <- if (any(finite_idx)) {
+      stats::quantile(boot_cutoffs[finite_idx],
+                      probs = c(0.025, 0.975), na.rm = TRUE)
+    } else NULL
     bootstrap_success_rate <- mean(finite_idx)
   }
 
@@ -296,6 +309,15 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   n_super <- rowSums(type_mat == paste0(feature, "_Super_Element"), na.rm = TRUE)
   n_valid <- rowSums(!is.na(type_mat))
   n_reps <- ncol(type_mat)
+  if (n_reps < 1L) stop("type_mat must contain at least one replicate column.")
+  if (!is.null(min_valid_replicates) &&
+      (length(min_valid_replicates) != 1L ||
+       !is.numeric(min_valid_replicates) ||
+       !is.finite(min_valid_replicates) ||
+       min_valid_replicates < 1 ||
+       min_valid_replicates != floor(min_valid_replicates))) {
+    stop("min_valid_replicates must be NULL or a positive integer.")
+  }
 
   required <- switch(support_rule,
     majority = floor(n_reps / 2) + 1L,
@@ -342,5 +364,3 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   if (is.null(dim(res))) res <- matrix(res, nrow = nrow(mat))
   res
 }
-
-

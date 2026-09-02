@@ -1,15 +1,10 @@
 citHeader("To cite epiPortrait in publications, please use:")
 
-citEntry(
-  entry    = "Manual",
-  title    = "epiPortrait: Replicate-Aware Epigenomic Domain Profiling",
-  author   = personList(as.person("Ying ZHANG")),
-  year     = "2026",
-  note      = "R package version 0.99.0",
-  url      = "https://github.com/zying106/epiPortrait",
-  textVersion = paste(
-    "Ying ZHANG (2026).",
-    "epiPortrait: Replicate-Aware Epigenomic Domain Profiling.",
-    "R package version 0.99.0. https://github.com/zying106/epiPortrait"
-  )
+bibentry(
+  bibtype = "Manual",
+  title = "epiPortrait: Replicate-Aware Epigenomic Domain Profiling",
+  author = person(given = "Ying", family = "ZHANG"),
+  year = "2026",
+  note = paste("R package version", meta$Version),
+  url = "https://github.com/zying106/epiPortrait"
 )

@@ -71,6 +71,14 @@ test_that("transition_matrix_per_sample compares per-sample call columns", {
                 colnames(rowData(se2)))
 })
 
+test_that("transition_matrix_per_sample propagates explicit Uncertain", {
+  se <- make_cross_se("A")
+  rowData(se)$Breadth_Call__t0[1] <- "Uncertain"
+  se <- transition_matrix_per_sample(
+    se, feature = "Breadth", timepoints = c("t0", "t1"), verbose = FALSE)
+  expect_equal(rowData(se)$Breadth_SampleTransition__t0_vs_t1[1], "Uncertain")
+})
+
 test_that("transition_matrix_per_sample gives all ordered pairs when ref=NULL", {
   se <- make_cross_se("A")
   rowData(se)$Breadth_Call__t2 <- rowData(se)$Breadth_Call__t0
@@ -150,4 +158,20 @@ test_that("integrate_cross_mark: mark_b label can differ from source call prefix
   expect_equal(rd$H3K4me3_Call__t1[2], "Uncertain")
   # output column exists under mark_b name
   expect_true("H3K4me3_NOverlaps__t0" %in% colnames(rd))
+})
+
+test_that("integrate_cross_mark is strand-agnostic and rejects assembly mismatch", {
+  a <- make_cross_se("A")[1, ]
+  b <- make_cross_se("B")[1, ]
+  GenomicRanges::strand(rowRanges(a)) <- "+"
+  GenomicRanges::strand(rowRanges(b)) <- "-"
+  metadata(a)$signal_contract <- list(genome = "hg38")
+  metadata(b)$signal_contract <- list(genome = "hg38")
+
+  res <- integrate_cross_mark(a, b, timepoints = c("t0", "t1"))
+  expect_equal(rowData(res)$Intensity_NOverlaps__t0, 1)
+
+  metadata(b)$signal_contract$genome <- "hg19"
+  expect_error(integrate_cross_mark(a, b, timepoints = c("t0", "t1")),
+               "different genome assemblies")
 })

@@ -88,6 +88,23 @@ test_that("no-call / NA propagates to Uncertain in combined taxonomy", {
   expect_equal(rowData(se)$Combined_Class__Control[1], "Uncertain")
 })
 
+test_that("explicit Uncertain propagates through combined transitions", {
+  se <- example_se
+  rowData(se)$Combined_Class__Control <- rep("Typical", nrow(se))
+  rowData(se)$Combined_Class__Treatment <- rep("Typical", nrow(se))
+  rowData(se)$Combined_Class__Control[1] <- "Uncertain"
+  se <- compare_superdomain_classes(se, "Control", "Treatment")
+  expect_equal(rowData(se)$Combined_Relative_Class_Transition[1], "Uncertain")
+})
+
+test_that("caller validates resampling and replicate thresholds", {
+  expect_error(call_super_domains(example_se, n_bootstrap = 1.5),
+               "positive integer")
+  expect_error(call_super_domains(example_se, min_valid_replicates = 0),
+               "positive integer")
+  expect_error(call_super_domains(example_se, seed = Inf), "finite integer")
+})
+
 # ---- P1-9 / 17.5: duplicate Domain_IDs must not silently mis-map ------------
 test_that("build_portrait_matrix enforces unique domain IDs", {
   # rtracklayer local BigWig I/O fails on Windows ("UCSC library operation failed");

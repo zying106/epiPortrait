@@ -1,7 +1,7 @@
 Package: epiPortrait
 Type: Package
 Title: Replicate-Aware Epigenomic Domain Profiling
-Version: 0.99.0
+Version: 0.99.1
 Depends: R (>= 4.5.0)
 Authors@R: c(
     person(given = "Ying", family = "ZHANG", 
@@ -20,7 +20,7 @@ Authors@R: c(
            email = "xuliang.phd@zju.edu.cn",
            comment = "This work is funded by the Fundamental Research Funds for the Central Universities (226-2025-00101) and the National Natural Science Foundation of China (32270746, 82203247, 82203415).")
   )
-Description: epiPortrait is a replicate-aware computational framework for
+Description: Provides a replicate-aware computational framework for
     quantitative phenotyping and comparison of epigenomic domains from
     normalized continuous signal tracks and per-sample native peak/domain
     calls (histone-mark ChIP-seq / CUT&Tag as the primary use case; also

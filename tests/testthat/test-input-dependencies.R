@@ -147,3 +147,14 @@ test_that("native_peak_geometry uses union of clipped peaks", {
   expect_equal(g3$NWocc[1], 401)   # clipped to 100-500
   expect_equal(g3$NWmax[1], 451)   # full width of the native peak
 })
+test_that("build_portrait_matrix rejects mixed declared genome assemblies", {
+  ss <- data.frame(
+    SampleID = c("s1", "s2"),
+    Condition = c("A", "B"),
+    bw_path = c(tempfile(fileext = ".bw"), tempfile(fileext = ".bw")),
+    Genome = c("hg38", "hg19"))
+  file.create(ss$bw_path)
+  on.exit(unlink(ss$bw_path), add = TRUE)
+  gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1, 10))
+  expect_error(build_portrait_matrix(ss, gr), "same genome assembly")
+})
