@@ -121,11 +121,11 @@ Expert review fixes (2026-08-14)
 Documentation repositioning (2026-08-11)
 
 * Package identity repositioned from "super-domain caller" to
-  "replicate-aware epigenomic domain profiling": DESCRIPTION title,
-  README/vignette narrative, and CITATION now describe the framework as
-  quantitative phenotyping of shared epigenomic domains (Intensity x native
-  peak breadth + within-domain signal architecture), with super-domain calling
-  as one analytical module. ROSE is presented as an optional H3K27ac benchmark;
+  "replicate-aware epigenomic domain profiling": DESCRIPTION title and
+  README/vignette narrative now describe the framework as quantitative
+  phenotyping of shared epigenomic domains (Intensity x native peak breadth +
+  within-domain signal architecture), with super-domain calling as one
+  analytical module. ROSE is presented as an optional H3K27ac benchmark;
   the tangent inflection is documented as a geometric variant, not a bit-exact
   ROSE reproduction.
 

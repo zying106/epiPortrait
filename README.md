@@ -555,10 +555,6 @@ Issues and feature requests:
 > Profiling*. R package version 0.99.1.
 > <https://github.com/zying106/epiPortrait>
 
-The canonical citation is stored in `inst/CITATION` and can be retrieved
-programmatically at any time with `citation("epiPortrait")`; the BibTeX
-entry above mirrors it.
-
 ``` bibtex
 @Manual{epiPortrait,
   title  = {epiPortrait: Replicate-Aware Epigenomic Domain Profiling},
