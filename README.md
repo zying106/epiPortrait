@@ -5,7 +5,7 @@
 
 [![R-CMD-check](https://github.com/zying106/epiPortrait/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zying106/epiPortrait/actions/workflows/R-CMD-check.yaml)
 [![BiocCheck](https://github.com/zying106/epiPortrait/actions/workflows/bioccheck.yaml/badge.svg)](https://github.com/zying106/epiPortrait/actions/workflows/bioccheck.yaml)
-[![Codecov](https://img.shields.io/codecov/c/github/zying106/epiPortrait)](https://app.codecov.io/gh/zying106/epiPortrait)
+[![codecov](https://codecov.io/gh/zying106/epiPortrait/branch/main/graph/badge.svg)](https://app.codecov.io/gh/zying106/epiPortrait)
 [![License: GPL (\>=
 3)](https://img.shields.io/badge/License-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Lifecycle:

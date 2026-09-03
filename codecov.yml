@@ -1,0 +1,11 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        # Keep line-level feedback, but do not fail commits when R source maps
+        # a changed continuation line (for example, a string literal) poorly.
+        informational: true

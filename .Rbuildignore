@@ -22,6 +22,7 @@
 ^\.github$
 ^validation$
 ^benchmark$
+^codecov[.]yml$
 ^vignettes/.*\.html$
 ^doc$
 ^Meta$
