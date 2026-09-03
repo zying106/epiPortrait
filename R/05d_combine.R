@@ -1,7 +1,7 @@
 #' Combine Intensity and Breadth Super-Domain Calls
 #'
 #' @description Combines the Intensity-Super and Breadth-Super calls into the
-#' final 2D architecture taxonomy (v1.0 design):
+#' final 2D architecture taxonomy:
 #' \code{Typical} / \code{Intensity-Super} / \code{Breadth-Super} /
 #' \code{Dual-Super} / \code{Uncertain}. \code{Dual-Super} means the domain is
 #' simultaneously high in integrated signal and unusually broad.
@@ -46,7 +46,7 @@ combine_superdomain_calls <- function(se, intensity_feature = "Intensity",
   }
 
   # per-group mode: combine the Intensity and Breadth calls within each group
-  # (P1-6). Produces Combined_Class__<group> columns so a combined-class
+  # Produces Combined_Class__<group> columns so a combined-class
   # transition can be computed between conditions.
   if (!is.null(group_var)) {
     meta <- as.data.frame(colData(se))
@@ -69,7 +69,7 @@ combine_superdomain_calls <- function(se, intensity_feature = "Intensity",
     return(se)
   }
 
-  # single suffix (consensus / per_sample): current behaviour
+  # Consensus and per-sample calls use a single column suffix.
   ic <- paste0(intensity_feature, "_", call_col_suffix)
   wc <- paste0(width_feature, "_", call_col_suffix)
 
@@ -152,7 +152,7 @@ compare_superdomains <- function(se, group_var = "Condition",
       stop(sprintf("cutoff_scope '%s' requires a per-sample assay feature, but '%s' is not an assay.",
                    cutoff_scope, feature))
     }
-    # P0-C: inherit the algorithmic settings of the primary call from the
+    # Inherit the algorithmic settings of the primary call from the
     # stored provenance (method, log_transform_used, min_quality), instead of
     # silently falling back to the defaults (elbow + auto-log) used by
     # .call_super_domains_on_vector().
@@ -178,24 +178,20 @@ compare_superdomains <- function(se, group_var = "Condition",
     }
     if (!is.finite(cutoff)) stop("Could not estimate a common cutoff.")
 
-    # P0-C: keep the transition replicate-aware. Each replicate is classified
+    # Keep the transition replicate-aware. Each replicate is classified
     # against the SAME common cutoff, then the per-group support rule is
     # applied — so reference/pooled transitions use the same replicate-support
     # semantics as relative ones, rather than a single group-mean crossing.
-    # P1-7: inherit the stored support_rule; fall back to "majority" ONLY when
-    # provenance is absent. The previous condition was inverted and forced
-    # "majority" whenever provenance carried a rule.
+    # Inherit the stored support_rule; use "majority" only when provenance is
+    # absent.
     support_rule <- if (is.null(prov) || is.null(prov$support_rule)) {
       "majority"
     } else {
       prov$support_rule
     }
-    # Inherit the FULL replicate-support configuration from the primary call
-    # (freeze review 2026-08-11): min_replicate_support (was hard-coded 0.5),
-    # tie_policy (was always strict), and min_valid_replicates (NULL must stay
-    # NULL so .replicate_support_call() re-resolves it from the per-group
-    # replicate count — falling back to 1L changed semantics, especially for
-    # unbalanced designs).
+    # Inherit the full replicate-support configuration from the primary call.
+    # A NULL min_valid_replicates must remain NULL so it is resolved from each
+    # group's replicate count, including for unbalanced designs.
     support_fraction <- if (!is.null(prov) && !is.null(prov$min_replicate_support)) {
       prov$min_replicate_support
     } else {
@@ -227,9 +223,9 @@ compare_superdomains <- function(se, group_var = "Condition",
   tr[r_s & t_s] <- "Persistent_Super"
   tr[!r_s & t_s] <- "Typical_to_Super"
   tr[r_s & !t_s] <- "Super_to_Typical"
-  tr[r_na | t_na] <- "Uncertain"  # propagate no-call (P0-8)
+  tr[r_na | t_na] <- "Uncertain"
 
-  # Relative transitions must not be labelled as absolute gain/loss (P0-4).
+  # Relative transitions must not be labelled as absolute gain/loss.
   col_name <- paste0(feature, "_Transition")
   if (cutoff_scope == "relative") {
     col_name <- paste0(feature, "_Relative_Transition")
@@ -242,9 +238,8 @@ compare_superdomains <- function(se, group_var = "Condition",
   }
   rowData(se)[[col_name]] <- tr
 
-  # Transition provenance (object-contract design). For reference/pooled modes
-  # the FULL inherited replicate-support configuration is recorded so the
-  # transition semantics are auditable (freeze review 2026-08-11).
+  # For reference/pooled modes, record the inherited replicate-support
+  # configuration so the transition semantics remain auditable.
   key <- paste0(ref_group, "_vs_", target_group)
   if (is.null(S4Vectors::metadata(se)$transitions)) {
     S4Vectors::metadata(se)$transitions <- list()
@@ -310,7 +305,7 @@ compare_superdomain_classes <- function(se, ref_group, target_group) {
                ifelse(r == t, paste0("Persistent_", r),
                       paste0(r, "_to_", t)))
   # Relative architecture-state transition: combined classes come from
-  # per-group independent cutoffs (review #10), so never label as absolute
+  # per-group independent cutoffs, so never label as absolute
   # gain/loss.
   rowData(se)[["Combined_Relative_Class_Transition"]] <- tr
 

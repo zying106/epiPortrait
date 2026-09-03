@@ -11,10 +11,10 @@
 #' @details
 #' \strong{Quantitative unit.} epiPortrait extracts \emph{continuous} signal
 #' magnitude (e.g. \code{Intensity}) from normalized BigWig tracks rather than
-#' integer read counts. limma is used directly on the log-transformed continuous
-#' intensity because it does not require the negative-binomial count modelling of
-#' DESeq2/edgeR. This is a distinct, defensible design: the rigor is that the bit
-#' is based on library-comparable normalized tracks, not raw fragment counts.
+#' integer read counts. limma is applied to log-transformed continuous intensity;
+#' unlike DESeq2 or edgeR, this is not a negative-binomial count model. Valid
+#' inference therefore requires quantitatively comparable normalized tracks and
+#' an appropriate experimental design.
 #'
 #' \strong{Explicit caveat (recorded in provenance).} The test is on the
 #' integrated BigWig signal, \emph{not} an exact read-count model. If the user
@@ -177,7 +177,7 @@ analyze_differential_domains <- function(se,
   }
 
   # ---- transform + filter ---------------------------------------------------
-  # P1 (review §2/§3): NA must stay NA (missing != zero signal); negative
+  # NA must stay NA (missing is not zero signal); negative
   # signal must NOT be silently clipped to 0 (would contradict
   # negative_policy = "allow" from build_portrait_matrix). EpigenDomain-level
   # differential analysis requires non-negative, non-missing intensity.
@@ -189,8 +189,9 @@ analyze_differential_domains <- function(se,
          "non-negative assay.", call. = FALSE)
   }
   m0 <- M
-  Mt <- log2(m0 + 1)  # v1.0: only log2, so <feature>_logFC / logFC_cutoff /
-                      # volcano x-axis are semantically consistent (review §11).
+  # Use one log2 scale so <feature>_logFC, logFC_cutoff and the volcano x-axis
+  # remain semantically consistent.
+  Mt <- log2(m0 + 1)
   # rows with NA signal are excluded from the fit (documented as untested);
   # rowMeans(na.rm=TRUE) would otherwise blur missing with zero.
   # drop rows below min_signal (based on mean transformed signal); these are
@@ -201,11 +202,10 @@ analyze_differential_domains <- function(se,
   n_fit <- nrow(Mt_fit)
 
   # ---- limma fit on the filtered subset -------------------------------------
-  # P0 fix: the fit runs on Mt_fit only (low-signal domains must not enter the
-  # empirical-Bayes / trend estimation), and results are mapped back by the
-  # ORIGINAL row index (fit_keep), never by position 1:n.
-  # P1-robust (review §12): a 0-row fit is a user error (threshold too high /
-  # all NA), not a silent all-NA result.
+  # The fit runs on Mt_fit only; low-signal domains must not enter the
+  # empirical-Bayes or trend estimation, and results are mapped back by the
+  # original row index (fit_keep), never by position 1:n. A zero-row fit means
+  # that the threshold is too high or all values are missing.
   if (n_fit == 0L) {
     stop("No domains passed min_signal filtering (min_signal = ",
          min_signal, "). Lower min_signal or check that the assay is present ",
@@ -249,8 +249,7 @@ analyze_differential_domains <- function(se,
   # ---- map back to original rows by index -----------------------------------
   # topTable(sort.by = "none") is row-aligned to Mt_fit (the filtered subset),
   # so tt row k corresponds to the k-th KEPT domain. We populate the output by
-  # the ORIGINAL row indices (keep_idx), which handles non-contiguous fit_keep
-  # correctly (regression: previously tt was indexed 1:n causing misalignment).
+  # the original row indices (keep_idx), which handles non-contiguous fit_keep.
   out <- data.frame(matrix(NA_real_, nrow = nrow(se), ncol = 5))
   colnames(out) <- c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val")
   keep_idx <- which(fit_keep)
@@ -259,7 +258,7 @@ analyze_differential_domains <- function(se,
   }
   status <- rep(NA_character_, nrow(se))
   ok <- fit_keep & !is.na(out$logFC) & !is.na(out$adj.P.Val)
-  # P1-1 (review): every tested domain is NS unless it meets the Gain/Loss
+  # Every tested domain is NS unless it meets the Gain/Loss
   # criteria — a large-effect-but-nonsignificant domain is "tested, NS", not
   # NA (NA must stay reserved for "not tested / excluded").
   if (any(ok)) status[ok] <- "NS"
@@ -340,7 +339,7 @@ plot_differential_volcano <- function(se, feature = "Intensity",
 
   df <- data.frame(
     logFC = rd[[logFC_col]],
-    # P1 (review §4): untested domains (NA adj.P.Val) must NOT become 1e-300 ->
+    # Untested domains (NA adj.P.Val) must not become 1e-300 and therefore
     # -log10 = 300 "extreme significance"; keep them NA (dropped by ggplot).
     negLog10P = {
       prv <- rd[[padj_col]]

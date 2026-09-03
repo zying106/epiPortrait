@@ -61,14 +61,14 @@ check_signal_compatibility <- function(sample_sheet, regions = NULL,
     signal_col <- "DomainSetSignalSum"
   } else {
     # Use the BigWig header (seqinfo) to build FIXED genomic tiles across the
-    # genome (P1-10). This avoids importing the first track's signal regions,
+    # genome. This avoids importing the first track's signal regions,
     # which would (a) load a large BigWig into memory and (b) bias the QC
     # toward the first sample's active regions.
     sel <- .genome_tiles(sample_sheet$bw_path[1], max_windows, seed = seed)
     signal_col <- "QCWindowSignalSum"
   }
 
-  # Metadata compatibility (review #11): if provided, Genome / SignalType /
+  # If provided, Genome, SignalType,
   # Normalization / BinSize must be consistent across samples.
   for (mc in c("Genome", "SignalType", "Normalization", "BinSize")) {
     if (mc %in% colnames(sample_sheet)) {
@@ -174,7 +174,7 @@ print.epi_signal_qc <- function(x, ...) {
 
 
 # Build fixed genomic tiles from a BigWig header (seqinfo) for QC sampling
-# (P1-10). Avoids importing the full first track and avoids biasing the QC
+# without importing the full first track or biasing the QC
 # toward the first sample's active regions. When sampling down to max_windows,
 # a `seed` is used only if explicitly supplied (default NULL = random draw).
 .genome_tiles <- function(bw_path, max_windows = 2000, tile_size = 10000L,

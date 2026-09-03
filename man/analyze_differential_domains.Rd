@@ -81,10 +81,10 @@ continuous signal change between condition groups.
 \details{
 \strong{Quantitative unit.} epiPortrait extracts \emph{continuous} signal
 magnitude (e.g. \code{Intensity}) from normalized BigWig tracks rather than
-integer read counts. limma is used directly on the log-transformed continuous
-intensity because it does not require the negative-binomial count modelling of
-DESeq2/edgeR. This is a distinct, defensible design: the rigor is that the bit
-is based on library-comparable normalized tracks, not raw fragment counts.
+integer read counts. limma is applied to log-transformed continuous intensity;
+unlike DESeq2 or edgeR, this is not a negative-binomial count model. Valid
+inference therefore requires quantitatively comparable normalized tracks and
+an appropriate experimental design.
 
 \strong{Explicit caveat (recorded in provenance).} The test is on the
 integrated BigWig signal, \emph{not} an exact read-count model. If the user

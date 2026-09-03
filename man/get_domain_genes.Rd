@@ -75,7 +75,7 @@ expression_status, expression_rank, candidate_priority.
 \description{
 Extracts candidate (domain-associated) genes from the stored
 domain-gene evidence (metadata(se)$domain_gene_links), optionally applying
-RNA-seq expression prioritization. Transparent ordinal prioritization:
+RNA-seq expression prioritization. Ordinal prioritization is explicit:
 evidence relationships come first, expression is a secondary tie-breaker;
 no black-box composite score is computed.
 }

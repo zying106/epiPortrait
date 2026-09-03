@@ -8,12 +8,12 @@
 #' peak width), and **SignalDispersion** (continuous within-domain signal
 #' architecture). Intensity and Breadth are the canonical classification axes;
 #' super-domain states (Intensity-Super, Breadth-Super, Dual-Super) are called
-#' with replicate-level evidence and transparent support rules, while
+#' with replicate-level evidence and explicit support rules, while
 #' SignalDispersion is retained as a secondary architecture descriptor. The
 #' package supports condition transitions, continuous domain-width remodeling,
 #' signal quality control, genome-aware domain annotation, optional BEDPE
 #' contact evidence, expression-aware candidate-gene prioritization, and
-#' publication-oriented visualization. Primary use case: histone-mark ChIP-seq /
+#' result visualization. Primary use case: histone-mark ChIP-seq /
 #' CUT&Tag; continuous-track workflows also apply to ATAC-seq-derived domains.
 #'
 #' @section Core workflow:

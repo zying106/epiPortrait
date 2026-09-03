@@ -33,7 +33,7 @@
 #'           eligible native PeakWidth distribution is ranked and cut by an
 #'           elbow/inflection; broad peaks are then mapped to the shared domains
 #'           by unique assignment and aggregated across replicates. This
-#'           follows the v1.0 design (Breadth-Super calling is decoupled from
+#'           keeps Breadth-Super calling decoupled from
 #'           consensus construction).
 #'   }
 #'   The static genomic interval length is available as \code{"IntervalWidth"}
@@ -179,7 +179,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                 verbose = TRUE) {
   mode <- match.arg(mode)
   # "consensus" is retained as a backward-compatible alias for
-  # "global_consensus" (P1-9): the mode identifies domains reproducibly super
+  # "global_consensus": the mode identifies domains reproducibly super
   # in EVERY condition group, i.e. a global/persistent consensus.
   if (mode == "consensus") mode <- "global_consensus"
   method <- match.arg(method, c("elbow", "tangent"))
@@ -208,7 +208,7 @@ call_super_domains <- function(se, feature = "Intensity",
        min_valid_replicates != floor(min_valid_replicates))) {
     stop("min_valid_replicates must be NULL or a positive integer.")
   }
-  # Freeze review 2026-08-11: min_replicate_support must be a finite fraction
+  # min_replicate_support must be a finite fraction
   # in (0, 1] when support_rule = "fraction". 0 would set required = 0 (every
   # domain Super); > 1 or NA silently breaks ceiling(fraction * n).
   if (support_rule == "fraction" &&
@@ -230,14 +230,14 @@ call_super_domains <- function(se, feature = "Intensity",
          "(e.g. 0.95 = top 5%).")
   }
 
-  # ---- Breadth route: peak-level native PeakWidth calling (v1.0 design) -----
+  # ---- Breadth route: peak-level native PeakWidth calling ------------------
   # Breadth-Super is NOT ranked on a domain x sample assay. Broad/typical is
   # decided per replicate on the genome-wide eligible native PeakWidth
   # distribution (elbow/inflection), THEN mapped to the shared domains by
   # unique assignment and aggregated across replicates. Consensus construction
   # never redefines the native broad status.
   if (feature == "Breadth") {
-    # P1-5: min_peak_overlap_fraction must be a finite fraction in [0, 1].
+    # min_peak_overlap_fraction must be a finite fraction in [0, 1].
     if (length(min_peak_overlap_fraction) != 1L ||
         !is.numeric(min_peak_overlap_fraction) ||
         !is.finite(min_peak_overlap_fraction) ||
@@ -266,7 +266,7 @@ call_super_domains <- function(se, feature = "Intensity",
   }
 
   # Feature may be a per-sample assay OR a static rowData column (e.g.
-  # IntervalWidth, P1-5). Resolve aliases (Width -> IntervalWidth) against
+  # IntervalWidth). Resolve aliases (Width -> IntervalWidth) against
   # either source.
   if (!feature %in% assayNames(se) && !feature %in% colnames(rowData(se))) {
     alt <- .resolve_assay(se, feature)
@@ -278,7 +278,7 @@ call_super_domains <- function(se, feature = "Intensity",
   meta <- as.data.frame(colData(se))
 
   # Feature matrix: per-sample assays, OR a static rowData column such as
-  # IntervalWidth (constant across samples, P1-5).
+  # IntervalWidth (constant across samples).
   if (feature %in% assayNames(se)) {
     mat <- assay(se, feature)
   } else if (feature %in% colnames(rowData(se))) {
@@ -298,12 +298,12 @@ call_super_domains <- function(se, feature = "Intensity",
   }
 
   if (mode == "global_consensus") {
-    # ---- Global (persistent) consensus across condition groups (P1-9) -------
+    # ---- Global (persistent) consensus across condition groups --------------
     # Stratify replicate support by group so that a domain called Super in
     # 2/2 Control replicates but 0/2 Treatment replicates is NOT silently
     # called "Global Super" via a pooled 2/4 support fraction.
     #
-    # P0-B: the global class must be decided by each group's GROUP_TYPE (does
+    # The global class is decided by each group's group type (does
     # the group pass the selected support rule?), NOT by support >= 1. Using
     # support >= 1 silently downgrades majority (2/3) groups to "all" and
     # makes support_rule meaningless.
@@ -336,7 +336,7 @@ call_super_domains <- function(se, feature = "Intensity",
       rowData(se)[[paste0(feature, "_Support__", g)]] <- g_res$support
     }
 
-    # Global class from per-group group_type (P0-B):
+    # Global class from per-group group_type:
     #   any group NA (insufficient valid / no-call)  -> Uncertain
     #   all groups Super                             -> Super
     #   otherwise                                    -> Typical
@@ -353,8 +353,8 @@ call_super_domains <- function(se, feature = "Intensity",
 
     # Display/rank columns come from the group-MEAN signal (visualization only).
     # They are NOT the classification engine; the global consensus decision is
-    # the per-sample -> replicate-support -> group-type chain above (review
-    # §6). Keep them clearly separated from the decision provenance.
+    # the per-sample -> replicate-support -> group-type chain above. Keep them
+    # clearly separated from the decision provenance.
     mean_call <- .run_call(setNames(rowMeans(mat, na.rm = TRUE), rownames(se)))
     rowData(se)[[paste0(feature, "_Rank")]] <- mean_call$Rank
     rowData(se)[[paste0(feature, "_Value")]] <- mean_call$Value_Used
@@ -362,7 +362,7 @@ call_super_domains <- function(se, feature = "Intensity",
     n_super <- sum(consensus_type == super_label, na.rm = TRUE)
     if (verbose) message(sprintf("Global consensus: %d super (rule '%s' per group), %d domains.",
                                   n_super, support_rule, nrow(se)))
-    # P1 (review §6): provenance must reflect the DECISION chain. Global
+    # Provenance must reflect the decision chain. Global
     # consensus has no single cutoff: each replicate is cut on its own ranked
     # distribution, support is aggregated per group. Store the per-sample
     # cutoffs/status/quality PROFILES for audit, the per-group support/type
@@ -410,7 +410,7 @@ call_super_domains <- function(se, feature = "Intensity",
     )
 
   } else if (mode == "per_group") {
-    # ---- Replicate-aware per-group calling (P0-7) ---------------------------
+    # ---- Replicate-aware per-group calling ---------------------------------
     # Call each replicate, compute per-group replicate support via the
     # support rule, and report the group call. The group-mean rank is
     # retained for display/visualization.
@@ -418,7 +418,7 @@ call_super_domains <- function(se, feature = "Intensity",
     groups <- unique(meta[[group_var]])
     n_super <- NA_integer_
     last_prov <- NULL
-    group_prov <- list()   # per-group replicate provenance (P1-7)
+    group_prov <- list()
     for (g in groups) {
       idx <- which(meta[[group_var]] == g)
       if (length(idx) == 0) next
@@ -440,7 +440,7 @@ call_super_domains <- function(se, feature = "Intensity",
       if (verbose) message("  ", g, ": ", n_g_super, " super (rule '", support_rule, "')")
       last_prov <- mean_call
 
-      # Per-replicate provenance (P1-7): cutoff/quality/status for each
+      # Per-replicate cutoff, quality and status for each
       # replicate in this group.
       rep_prov <- lapply(idx, function(i) {
         r <- g_calls[[match(i, idx)]]
@@ -454,9 +454,8 @@ call_super_domains <- function(se, feature = "Intensity",
       })
       group_prov[[g]] <- list(
         replicate_calls = rep_prov,
-        # full domain x replicate call matrix for auditability (design
-        # 2026-08-10: group calls are replicate-support aggregates; this matrix
-        # exposes the per-domain per-replicate evidence).
+        # Full domain x replicate call matrix. Group calls are replicate-support
+        # aggregates; this matrix exposes the underlying per-domain evidence.
         replicate_call_matrix = {
           m <- g_type
           colnames(m) <- colnames(mat)[idx]
@@ -471,7 +470,7 @@ call_super_domains <- function(se, feature = "Intensity",
     # There is no single global cutoff in per_group mode: each replicate is cut
     # on its own ranked distribution, and per-replicate cutoffs / quality live
     # in groups[[g]]$replicate_calls. Do not expose the last group's group-mean
-    # cutoff as if it were THE cutoff (P1-?): null out the ambiguous fields.
+    # cutoff as if it were the classification cutoff; leave these fields empty.
     provenance <- list(
       cutoff_value = NA_real_,
       cutoff_stability_interval = NULL,
@@ -491,7 +490,7 @@ call_super_domains <- function(se, feature = "Intensity",
     # per_sample: call each sample independently; store the per-sample
     # cutoff/quality in provenance (symmetric with Breadth) so that
     # plot_hockey_stick(se, feature, group = <sample>) can draw the per-sample
-    # cutoff line (freeze review 2026-08-11).
+    # cutoff line.
     rep_prov <- list()
     for (s in colnames(mat)) {
       call_res <- .run_call(setNames(mat[, s], rownames(se)))
@@ -512,7 +511,7 @@ call_super_domains <- function(se, feature = "Intensity",
     provenance <- first_call
   }
 
-  # ---- Store call provenance (P0-5, P1-7) -----------------------------------
+  # ---- Store call provenance ------------------------------------------------
   if (is.null(S4Vectors::metadata(se)$superdomain_calls))
     S4Vectors::metadata(se)$superdomain_calls <- list()
   S4Vectors::metadata(se)$superdomain_calls[[feature]] <- list(
@@ -541,7 +540,7 @@ call_super_domains <- function(se, feature = "Intensity",
     note = provenance$note,
     groups = if (exists("group_prov", inherits = FALSE)) group_prov else NULL,
     replicates = if (exists("rep_prov", inherits = FALSE)) rep_prov else NULL,
-    # reviewer §6: global_consensus provenance must expose the DECISION chain
+    # Global-consensus provenance exposes the decision chain
     # (per-sample evidence, per-group support/types, display cutoffs kept
     # separate). Only populated in global_consensus mode.
     decision_chain = provenance$decision_chain,
@@ -555,9 +554,9 @@ call_super_domains <- function(se, feature = "Intensity",
 }
 
 
-# ---- Breadth-Super: peak-level native PeakWidth calling (v1.0 design) -------
+# ---- Breadth-Super: peak-level native PeakWidth calling ----------------------
 #
-# Implements the design decision (2026-08-09): Breadth-Super must NOT be ranked
+# Breadth-Super is not ranked
 # on a domain x sample assay. Instead:
 #   1. each replicate's GENOME-WIDE eligible native peaks are filtered by fixed
 #      QC (valid width, allowed chromosomes);
@@ -600,8 +599,8 @@ call_super_domains <- function(se, feature = "Intensity",
   #
   # A replicate whose inflection is NOT reliable (no_call) provides NO
   # broad/typical evidence at all: it must not be coerced to "all Typical"
-  # (P0-1). The quantile path has no quality gate (the user owns the QC
-  # choice), so it always yields a call (0 Broad for a constant-width
+  # The quantile path has no quality gate, so it always yields a call (0 Broad
+  # for a constant-width
   # distribution). rep_call_valid lets the mapping step skip no-call
   # replicates -> Uncertain.
   peak_tables <- list()
@@ -625,7 +624,7 @@ call_super_domains <- function(se, feature = "Intensity",
     if (length(w) == 0L) {
       # No eligible native peaks after (optional) valid_chroms filtering:
       # neither the quantile nor the elbow path can estimate a cutoff, so the
-      # replicate provides no broad evidence -> Uncertain (P0-1). This must be
+      # replicate provides no broad evidence -> Uncertain. This must be
       # handled BEFORE quantile()/find_hockey_inflection() to avoid a runtime
       # error on an empty width vector.
       rep_broad[[s]] <- rep(NA, 0L)
@@ -639,8 +638,8 @@ call_super_domains <- function(se, feature = "Intensity",
       # Explicit top-fraction rule, symmetric with Intensity: the cutoff is the
       # quantile_cutoff quantile of this replicate's genome-wide eligible
       # native PeakWidth distribution (bp), so the top
-      # 100*(1-quantile_cutoff)% widest peaks are Broad. The user owns the QC
-      # choice; no-call semantics of the data-driven path are untouched.
+      # 100*(1-quantile_cutoff)% widest peaks are Broad. This explicit rule has
+      # no quality gate; no-call semantics of the data-driven path are unchanged.
       cutoff_value <- as.numeric(stats::quantile(
         w, probs = quantile_cutoff, names = FALSE))
       method_label <- sprintf("quantile_%.2f", quantile_cutoff)
@@ -649,7 +648,7 @@ call_super_domains <- function(se, feature = "Intensity",
       inflect <- find_hockey_inflection(
         w, method = method, min_quality = min_quality, verbose = FALSE)
       if (inflect$call_status != "called") {
-        # no reliable elbow -> no evidence for this replicate (P0-1).
+        # No reliable elbow means no evidence for this replicate.
         rep_broad[[s]] <- rep(NA, length(eligible))
         rep_call_valid[s] <- FALSE
         prov_replicates[[s]] <- list(
@@ -698,7 +697,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                      cutoff_value = NA_real_))
           # Only a "called" resample is a bootstrap success: no_call resamples
           # (quality below min_quality) can still carry a finite cutoff_value,
-          # which must NOT be counted as a stable cutoff (P1, review 14 §11).
+          # which must not be counted as a stable cutoff.
           cutoffs[b] <- if (identical(br$call_status, "called")) {
             br$cutoff_value
           } else {
@@ -750,7 +749,7 @@ call_super_domains <- function(se, feature = "Intensity",
   # A native peak is assigned to at most ONE shared domain: the overlapping
   # domain with the maximum overlap bp, provided the peak-overlap fraction
   # >= min_peak_overlap_fraction. Unmapped / Ambiguous peaks NEVER provide
-  # broad OR typical evidence (P0-2): only successfully uniquely-mapped peaks
+  # broad or typical evidence: only successfully uniquely mapped peaks
   # contribute, so an edge-overlap Unmapped peak cannot silently turn a domain
   # into Typical.
   domain_evidence <- matrix(NA_character_, nrow = nrow(se), ncol = ncol(se),
@@ -810,7 +809,7 @@ call_super_domains <- function(se, feature = "Intensity",
 
     # Domain-level evidence for this replicate. ONLY uniquely-mapped peaks
     # contribute: broad peaks set Super, and typical evidence comes only from
-    # uniquely-mapped non-broad peaks (P0-2). Unmapped / Ambiguous peaks never
+    # uniquely mapped non-broad peaks. Unmapped or ambiguous peaks never
     # create evidence.
     ev <- rep(NA_character_, nrow(se))
     mapped_idx <- which(!is.na(assign_domain))
@@ -885,7 +884,7 @@ call_super_domains <- function(se, feature = "Intensity",
         rowSums(domain_evidence[, idx, drop = FALSE] == super_label, na.rm = TRUE)
       # expose the domain x replicate Broad evidence matrix for
       # get_replicate_calls() (Breadth replicate audit trail must
-      # be symmetric with Intensity, design 2026-08-10).
+      # be symmetric with Intensity.
       breadth_group_prov[[g]] <- list(
         replicate_call_matrix = {
           m <- domain_evidence[, idx, drop = FALSE]
@@ -945,7 +944,7 @@ call_super_domains <- function(se, feature = "Intensity",
 
 
 # Basic fixed QC for the genome-wide eligible native peak set used by
-# Breadth-Super calling (design: cutoff estimated on the eligible set, NOT on
+# Breadth-Super calling (the cutoff is estimated on the eligible set, not on
 # domain-restricted peaks). Filters: valid width > 0 and, when provided,
 # allowed chromosomes.
 .eligible_native_peaks <- function(peaks, valid_chroms = NULL) {
@@ -956,4 +955,3 @@ call_super_domains <- function(se, feature = "Intensity",
   }
   peaks[ok]
 }
-

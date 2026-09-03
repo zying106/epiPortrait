@@ -1,5 +1,5 @@
-# ---- Academic visualization suite (epiPortrait_object_visualization) --------
-# Follows the academic visualization design: every plot is a view of the
+# ---- Visualization helpers --------------------------------------------------
+# Every plot is a view of the
 # SummarizedExperiment object; plotting never re-computes biological calls.
 
 # Publication palette: same biological class always the same colour. Keys are
@@ -65,9 +65,8 @@
 }
 
 .epi_theme_publication <- function(base_size = 10.5) {
-  # Nature-style publication theme: no background grid lines, thin black axis
-  # lines, Arial sans-serif, compact sizes, frameless legend (nature-figure
-  # skill R quick-start).
+  # Compact publication theme with no background grid, thin black axes and a
+  # frameless legend.
   ggplot2::theme_classic(base_size = base_size, base_family = "sans") +
     ggplot2::theme(
       plot.title = ggplot2::element_text(face = "bold", size = base_size + 2),
@@ -113,7 +112,7 @@
 # Display class: render legacy "Width-Super" as "Breadth-Super" for backward
 # compatibility with pre-v1.0 objects, and apply mark-aware display labels
 # when a preset is provided (e.g. H3K27me3 -> Extended-Domain / Dual-Extreme).
-# Internal class values are never changed (heterochromatin plan 2026-08-10).
+# Internal class values are never changed.
 .epi_display_class <- function(x, mark = NULL) {
   if (!is.null(mark)) {
     preset <- tryCatch(get_mark_preset(mark), error = function(e) NULL)
@@ -451,7 +450,7 @@ plot_replicate_support <- function(se, feature = "Intensity", group = NULL,
                                     group_var = "Condition",
                                     min_support = 1, show_counts = TRUE) {
   # Breadth support lives in rowData (Breadth_Support__<group>), not in an
-  # assay, so bypass .epi_resolve_feature() for it (heterochromatin review).
+  # assay, so bypass .epi_resolve_feature() for it.
   feat <- if (identical(feature, "Breadth")) "Breadth" else .epi_resolve_feature(se, feature)
   rd <- as.data.frame(rowData(se), optional = TRUE)
   meta <- as.data.frame(colData(se))

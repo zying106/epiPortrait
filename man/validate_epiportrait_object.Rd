@@ -15,7 +15,7 @@ first failing invariant.
 }
 \description{
 Verifies the internal consistency invariants of an epiPortrait
-object (see object-contract design): unique row names, alignment between
+object: unique row names, alignment between
 assays and rowRanges/colData, IntervalWidth matching rowRanges widths,
 presence of required assays, and consistent per-group class/support columns.
 }

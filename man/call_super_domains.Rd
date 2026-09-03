@@ -39,7 +39,7 @@ object to carry sample-specific native peak calls (see
 eligible native PeakWidth distribution is ranked and cut by an
 elbow/inflection; broad peaks are then mapped to the shared domains
 by unique assignment and aggregated across replicates. This
-follows the v1.0 design (Breadth-Super calling is decoupled from
+keeps Breadth-Super calling decoupled from
 consensus construction).
 }
 The static genomic interval length is available as \code{"IntervalWidth"}

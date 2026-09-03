@@ -1,5 +1,5 @@
 # Rank-axis breaks for hockey-stick plots: target ~5 ticks (4-6) so the
-# x-axis is neither sparse (the original complaint) nor cluttered on large
+# x-axis is neither sparse nor cluttered on large
 # domain universes. Step is a "nice" number (1/2/2.5/5/10 x 10^k) sized to the
 # range; among steps that give 4-6 breaks the densest is preferred.
 .epi_rank_breaks <- function(limits) {
@@ -69,7 +69,7 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
                               group_var = "Condition",
                               show_cutoff = TRUE, show_cutoff_band = TRUE) {
 
-  # ---- Breadth branch (P1-1) ------------------------------------------------
+  # ---- Breadth branch -------------------------------------------------------
   # Breadth-Super is a PEAK-LEVEL call: there is no shared-domain breadth rank
   # curve. We plot the replicate-specific native PeakWidth rank curve directly
   # from metadata(se)$breadth_peak_calls. The caller must specify a sample
@@ -146,9 +146,8 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
     col_rank <- paste0(feature, "_Rank__", group)
   }
   if (!col_type %in% colnames(rd)) {
-    # P2-fix: after a per_group call there is no consensus _Domain_Type column;
-    # the previous error ("Run call_super_domains first") was misleading because
-    # the user HAD called it. Point directly to the available per-group columns.
+    # A per_group call has no consensus _Domain_Type column; report the
+    # available groups directly.
     if (is.null(group)) {
       pg_cols <- grep(sprintf("^%s_Call__", feature), colnames(rd), value = TRUE)
       if (length(pg_cols) > 0) {
@@ -199,7 +198,7 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
 
   # Caller labels: Super / Typical / NA (no-call -> Uncertain).
   # SignalDispersion is a secondary architecture descriptor, NOT a canonical
-  # Super axis (v1.0 design): label its generic caller output as a plain
+  # Super axis: label its generic caller output as a plain
   # "Dispersion" extreme rather than a taxonomy class.
   super_type <- paste0(feature, "_Super_Element")
   typical_type <- paste0(feature, "_Typical")
@@ -442,8 +441,7 @@ plot_peak_track <- function(se, peak_id, group_var = "Condition", extend_bp = 10
     geom_area(aes(fill = Group), alpha = 0.8) +
     facet_wrap(~Sample, ncol = 1, scales = if (free_y) "free_y" else "fixed") +
     theme_classic(base_size = 12, base_family = "sans") +
-    # P2-fix: scale_fill_brewer("Set1") capped at 9 groups; use the package's
-    # own condition palette (ramped beyond 3 groups) for consistency.
+    # Use the package palette so more than nine groups remain supported.
     scale_fill_manual(values = .epi_group_palette(plot_df$Group)) +
     labs(title = sprintf("Coverage Track: %s", peak_id),
          subtitle = sprintf("Region: %s:%d-%d%s",

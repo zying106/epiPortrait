@@ -1,7 +1,7 @@
 #' Validate an epiPortrait SummarizedExperiment Object
 #'
 #' @description Verifies the internal consistency invariants of an epiPortrait
-#' object (see object-contract design): unique row names, alignment between
+#' object: unique row names, alignment between
 #' assays and rowRanges/colData, IntervalWidth matching rowRanges widths,
 #' presence of required assays, and consistent per-group class/support columns.
 #'
@@ -51,9 +51,8 @@ validate_epiportrait_object <- function(se) {
       stop("colnames(se) must equal colData(se)$SampleID.")
     }
   }
-  # P1-6: if a per-group replicate_call_matrix is
-  # stored, verify it obeys the object contract (rows = domains, rownames =
-  # domain IDs, columns = a subset of the samples).
+  # If a per-group replicate_call_matrix is stored, verify that its rows and
+  # row names match the domains and its columns are a subset of the samples.
   calls <- S4Vectors::metadata(se)$superdomain_calls
   if (!is.null(calls)) {
     for (feat in names(calls)) {
@@ -126,8 +125,8 @@ get_domain_results <- function(se, group_var = "Condition",
     }
   }
 
-  # Uncertain-cause columns (freeze 2026-08-11): for every feature that has
-  # per-group call columns, append <feature>_Uncertain_Cause__<group> so the
+  # For every feature with per-group calls, append
+  # <feature>_Uncertain_Cause__<group> so the
   # reason behind each NA/Uncertain call is directly auditable in the flat
   # table (see get_uncertain_cause()). Purely read-only; skipped on error.
   if (!is.null(group_var) && group_var %in% colnames(colData(se))) {
@@ -382,7 +381,7 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
         s_cols <- s_cols[keep]; samples <- samples[keep]
       }
       if (length(s_cols) > 0) {
-        # P1-2: per_sample fallback must return a matrix too (consistent with
+        # The per_sample fallback also returns a matrix, consistent with
         # the per_group branch and the documented return type).
         mat <- as.matrix(as.data.frame(rowData(se)[, s_cols, drop = FALSE]))
         colnames(mat) <- samples
@@ -391,7 +390,7 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
     }
   }
   if (is.null(mat) || ncol(mat) == 0) {
-    # P1-2 (clearer error): distinguish "no calls at all" from "group absent".
+    # Distinguish "no calls at all" from "group absent".
     if (!is.null(group) && !group %in% unique(as.character(meta[[.group_var_used()]]))) {
       stop(sprintf("group '%s' not found in colData.", group))
     }
@@ -401,7 +400,7 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
   if (!long) return(mat)
 
   # long format: use the ACTUAL group_var used by the call (not a hard-coded
-  # "Condition"; design 2026-08-10), so custom group_var (e.g. "Subtype") is
+  # "Condition"), so custom group_var (e.g. "Subtype") is
   # respected. Column is named "Group".
   gv <- .group_var_used()
   group_vals <- if (!is.null(gv) && gv %in% colnames(meta)) {
@@ -564,7 +563,7 @@ summarize_epiportrait_object <- function(se) {
 #'
 #' @description Writes a self-contained results directory: flat TSV tables,
 #' per-assay matrices, per-call tables, an object manifest, and the complete
-#' SummarizedExperiment as RDS (the scientific record).
+#' SummarizedExperiment as RDS.
 #'
 #' @param se A SummarizedExperiment.
 #' @param outdir Character. Output directory (created if missing).
@@ -604,7 +603,7 @@ export_epiportrait_results <- function(se, outdir = "epiPortrait_results",
                        file.path(outdir, "transition_results.tsv"),
                        sep = "\t", quote = FALSE, row.names = FALSE)
   }
-  # Domain-gene annotation evidence (P1-14): long-format links and provenance.
+  # Domain-gene annotation evidence: long-format links and provenance.
   if (!is.null(S4Vectors::metadata(se)$domain_gene_links)) {
     dir.create(file.path(outdir, "annotation"), showWarnings = FALSE)
     utils::write.table(S4Vectors::metadata(se)$domain_gene_links,

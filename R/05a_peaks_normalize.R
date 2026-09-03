@@ -1,7 +1,3 @@
-# Genome resource resolution now lives in .resolve_genome_resources()
-# (R/04_annotation.R); the legacy .get_txdb() helper was removed as dead code
-#.
-
 #' Stitch Proximal Epigenetic Peaks
 #'
 #' @description Merges closely spaced peaks into larger continuous macro-domains based on
@@ -35,7 +31,7 @@ stitch_epi_peaks <- function(gr, stitch_distance = 12500) {
 
   message(sprintf("Stitching peaks within %d bp of each other...", stitch_distance))
 
-  # P2-8: reduce() merges intervals whose gap is
+  # reduce() merges intervals whose gap is
   # STRICTLY LESS than min.gapwidth, so a gap exactly equal to stitch_distance
   # would not merge. Using min.gapwidth = stitch_distance + 1 makes the
   # documented "maximum distance to stitch" (gap <= stitch_distance) exact.
@@ -81,12 +77,12 @@ filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000, downstre
 
   if (!requireNamespace("GenomicFeatures", quietly = TRUE)) stop("Please install 'GenomicFeatures'.")
 
-  # P1-3: a chr-vs-1 naming mismatch would silently remove 0 promoter overlaps
+  # A chr-vs-1 naming mismatch would silently remove 0 promoter overlaps
   # and leave every peak in place; enforce seqlevel compatibility like
   # annotate_epi_domains() does.
   .check_seqlevel_compatibility(gr, txdb = txdb, enforce = TRUE)
 
-  # P2-7: validate promoter window parameters (same rules as annotation).
+  # Validate promoter window parameters using the annotation rules.
   for (nm in c("upstream", "downstream")) {
     v <- get(nm)
     if (length(v) != 1L || !is.numeric(v) || !is.finite(v) || v < 0) {
@@ -217,7 +213,7 @@ normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
 
   assay(se, .resolve_assay(se, "Intensity")) <- norm_int
 
-  # SignalDispersion is NOT rescaled (P0-4). It is a spatial measure in bp that
+  # SignalDispersion is not rescaled. It is a spatial measure in bp that
   # is invariant under a uniform multiplicative rescaling of the signal
   # (x_i -> c*x_i leaves the weighted genomic SD unchanged). Applying library
   # scaling factors or quantile transforms would change its unit and break its
@@ -225,14 +221,11 @@ normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
   # it would destroy the cross-domain magnitude ranking used for Super calling;
   # plotting / PCA layers apply their own display scaling.
   if (!identical(disp_mat, assay(se, "SignalDispersion"))) {
-    stop("SignalDispersion was unexpectedly modified during normalization (P0-4).")
+    stop("SignalDispersion was unexpectedly modified during normalization.")
   }
 
-  # P2-fix: the previous sprintf() had a format string without a placeholder but
-  # a second argument, producing a runtime warning and truncating the message.
-  # message() concatenates its arguments directly.
   message("Normalization complete! Intensity adjusted; SignalDispersion ",
-          "(bp-scale spatial descriptor) is left unchanged (P0-4).")
+          "(bp-scale spatial descriptor) is left unchanged.")
   return(se)
 }
 

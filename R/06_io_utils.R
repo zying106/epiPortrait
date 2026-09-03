@@ -30,7 +30,7 @@ filter_blacklist <- function(gr, genome = "hg38", blacklist_path = NULL) {
     blacklist <- rtracklayer::import(bl_path)
   }
   if (is.null(blacklist)) stop("Blacklist not found for ", genome)
-  # P1-4: zero shared seqlevels between input and blacklist means a naming
+  # Zero shared seqlevels between input and blacklist indicates a naming
   # mismatch (chr1 vs 1), not "no blacklist peaks" — fail loudly instead of
   # silently keeping everything.
   shared_sl <- intersect(as.character(GenomicRanges::seqnames(gr)),

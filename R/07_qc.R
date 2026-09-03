@@ -23,7 +23,7 @@
 #' @export
 plot_portrait_pca <- function(se, feature = "Intensity", group_var = "Condition",
                               n_top = 500, features = NULL) {
-  # Support combined-feature PCA (academic design): features = c("Intensity",
+  # For combined-feature PCA, features = c("Intensity",
   # "SignalDispersion") concatenates the top-variable domains of each feature
   # into one variable set before prcomp.
   if (is.null(features)) {

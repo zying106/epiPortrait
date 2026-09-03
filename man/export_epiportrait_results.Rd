@@ -27,7 +27,7 @@ Invisibly the path to the output directory.
 \description{
 Writes a self-contained results directory: flat TSV tables,
 per-assay matrices, per-call tables, an object manifest, and the complete
-SummarizedExperiment as RDS (the scientific record).
+SummarizedExperiment as RDS.
 }
 \examples{
 data(example_se)

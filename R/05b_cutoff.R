@@ -84,7 +84,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     inflection_idx <- min(max(inflection_idx, 1L), n)
   } else {
     # elbow: SIGNED perpendicular distance below the first-last line.
-    # Both coordinates are normalized to [0,1] (P1-7) so the geometry is
+    # Both coordinates are normalized to [0,1] so the geometry is
     # dimensionless and independent of the feature scale / sample size.
     # The first point maps to (0,0) and the last to (1,1); a perfectly linear
     # curve then coincides with the diagonal y = x (distance 0).
@@ -103,7 +103,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   }
 
   # Method-agnostic curve-prominence quality, computed on normalized coords so
-  # min_quality is a dimensionless, scale-invariant threshold (P1-7).
+  # min_quality is a dimensionless, scale-invariant threshold.
   xr0 <- (seq_len(n) - 1) / max(n - 1, 1)
   yr0 <- (xs - xs[1]) / max(xs[n] - xs[1], 1e-10)
   slope0 <- (yr0[n] - yr0[1]) / max(xr0[n] - xr0[1], 1e-10)
@@ -159,7 +159,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   if (diff(range(val_vector, na.rm = TRUE)) <= .Machine$double.eps)
     return(.no_call("Constant feature values. No reliable inflection."))
 
-  # Resolve log-transform ONCE (P0-2). The user may pass NULL (auto), TRUE,
+  # Resolve log-transform once. The user may pass NULL (auto), TRUE,
   # or FALSE. We resolve to a concrete value here so that bootstrap recursion
   # uses the SAME effective scale as the main analysis. Passing NULL into the
   # recursion would re-resolve to the auto rule, which could differ from an
@@ -211,7 +211,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   if (call_status == "called") {
     cutoff_value <- rank_df$Value[inflection_idx]
     inflection_idx <- min(inflection_idx, n)
-    # P0-D: tie policy. ROSE selects super-enhancers strictly ABOVE the
+    # ROSE selects super-enhancers strictly above the
     # cutoff (> cutoff). "strict" (default) follows ROSE and avoids inflating
     # the super set when many discrete values (e.g. integer widths) tie exactly
     # at the cutoff. "inclusive" (>= cutoff) is the legacy behaviour.
@@ -243,7 +243,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
         boot_vec <- raw_vector[boot_idx]
         names(boot_vec) <- seq_len(n_peaks)
         # Recurse from the RAW vector using the SAME effective transform scale
-        # as the main analysis (P0-2): FALSE stays FALSE, TRUE stays TRUE, and
+        # as the main analysis: FALSE stays FALSE, TRUE stays TRUE, and
         # AUTO is resolved once here. Never re-resolve inside the recursion.
         boot_res <- tryCatch(
           .call_super_domains_on_vector(boot_vec, feature, quantile_cutoff,
@@ -259,8 +259,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     })
     # The bootstrap reflects resampling stability over the fixed candidate
     # universe, not a classical iid confidence interval; report it as a
-    # stability interval and record how many resamples yielded a valid cutoff
-    # (review #9).
+    # stability interval and record how many resamples yielded a valid cutoff.
     finite_idx <- is.finite(boot_cutoffs)
     cutoff_stability_interval <- if (any(finite_idx)) {
       stats::quantile(boot_cutoffs[finite_idx],
@@ -288,7 +287,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
 
 
 # Compute a replicate-support group call from a matrix of per-replicate
-# domain types (rows = domains, cols = replicates). Implements P0-3:
+# domain types (rows = domains, cols = replicates):
 #
 #   * support_rule = "majority": need > n/2 super replicates
 #     (floor(n/2)+1); n=2 needs 2, n=3 needs 2.
@@ -325,14 +324,14 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     fraction = ceiling(min_replicate_support * n_reps)
   )
 
-  # E: if min_valid_replicates is NULL, require at least the number of valid
+  # If min_valid_replicates is NULL, require at least the number of valid
   # replicates the support rule needs. This prevents "Super + no_call" in an
   # n=2 group from being called Typical (it is actually Uncertain), because a
   # single valid replicate cannot establish 2-replicate reproducibility.
   if (is.null(min_valid_replicates)) min_valid_replicates <- required
 
   # Support as fraction of ALL replicates (not just valid ones): a no-call
-  # replicate must not boost support (P0-3).
+  # replicate must not boost support.
   support <- n_super / max(n_reps, 1)
   enough_valid <- n_valid >= min_valid_replicates
 
@@ -348,9 +347,9 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
 # Classify per-replicate signal vectors against a FIXED cutoff, returning a
 # matrix of domain types (rows = domains, cols = replicates). Used by
 # compare_superdomains(cutoff_scope = "reference"/"pooled") to keep the
-# transition replicate-aware (P0-C). NA values stay NA (never coerced to
+# transition replicate-aware. NA values stay NA (never coerced to
 # "Typical"), and the tie policy (strict ">" vs inclusive ">=") is inherited
-# from the primary call (freeze review 2026-08-11).
+# from the primary call.
 .classify_vs_cutoff <- function(mat, cutoff, feature,
                                 tie_policy = c("strict", "inclusive")) {
   tie_policy <- match.arg(tie_policy)

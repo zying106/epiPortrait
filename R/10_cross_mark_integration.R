@@ -1,6 +1,6 @@
 # Cross-mark integration and per-sample transition helpers.
 #
-# Two design gaps closed (GSE251898 two-axis benchmark, 2026-08-26):
+# These helpers support two workflows:
 #   * A single epiPortrait object carries ONE mark's axes (e.g. H3K4me3
 #     Breadth or H3K27ac Intensity). The full two-axis picture (intensity
 #     on the enhancer mark, width on the promoter mark) requires aligning
@@ -151,10 +151,10 @@ integrate_cross_mark <- function(se_a, se_b,
                     length(shared), length(sl_a)), call. = FALSE)
   }
 
-  # Source call-value prefix comes from call_fmt_b (the REAL values in se_b's
-  # rowData), NOT from mark_b. mark_b is only the OUTPUT label. Deriving from
+  # Source call-value prefix comes from call_fmt_b (the values in se_b's
+  # rowData), not from mark_b. mark_b is only the output label. Deriving from
   # mark_b would silently produce "H3K4me3_Super_Element" when the data carry
-  # "Breadth_Super_Element" (review 2026: P1 cross-mark prefix/label mixing).
+  # "Breadth_Super_Element".
   source_prefix_b <- sub("_Call__%s$", "", call_fmt_b)
   super_b <- paste0(source_prefix_b, "_Super_Element")
   typ_b   <- paste0(source_prefix_b, "_Typical")

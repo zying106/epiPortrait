@@ -34,7 +34,7 @@ se with Combined_Domain_Class column (or Combined_Class__\if{html}{\out{<group>}
 }
 \description{
 Combines the Intensity-Super and Breadth-Super calls into the
-final 2D architecture taxonomy (v1.0 design):
+final 2D architecture taxonomy:
 \code{Typical} / \code{Intensity-Super} / \code{Breadth-Super} /
 \code{Dual-Super} / \code{Uncertain}. \code{Dual-Super} means the domain is
 simultaneously high in integrated signal and unusually broad.

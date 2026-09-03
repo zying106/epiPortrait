@@ -105,10 +105,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   if (!all(req_cols %in% colnames(sample_sheet))) {
     stop("sample_sheet must contain columns: 'SampleID', 'Condition', and 'bw_path'")
   }
-  # Freeze review 2026-08-11: many downstream steps index by sample name
-  # (metadata(se)$native_peaks[[s]], colnames(se), replicate_call_matrix), so a
-  # missing/empty/duplicated SampleID must fail loudly at the entry point
-  # rather than producing ambiguous list indexing / output columns.
+  # Downstream objects are indexed by sample name, so identifiers must be
+  # complete and unique to prevent ambiguous list and matrix indexing.
   if (anyNA(sample_sheet$SampleID) ||
       any(!nzchar(as.character(sample_sheet$SampleID))) ||
       anyDuplicated(sample_sheet$SampleID)) {
@@ -180,7 +178,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   # Native peak files are OPTIONAL. When absent for a sample, native breadth
   # geometry is NA and that sample cannot contribute to Breadth-Super calling.
   # has_peaks is ALWAYS a per-sample logical vector (length = nrow(sample_sheet))
-  # so indexing has_peaks[i] is safe in both modes (P0-3).
+  # so indexing has_peaks[i] is safe whether or not peak_path is supplied.
   if ("peak_path" %in% colnames(sample_sheet)) {
     has_peaks <- !is.na(sample_sheet$peak_path) &
       nzchar(sample_sheet$peak_path)
@@ -245,7 +243,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 
   # Cache key per sample: full path + size + mtime + region hash.
   # Using basename() alone causes collisions across directories and stale reads
-  # when a BigWig file is updated in place (P1-3).
+  # when a BigWig file is updated in place.
   .cache_key <- function(bw_path) {
     finfo <- file.info(bw_path)
     digest::digest(list(
@@ -258,7 +256,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 
   # 4. Parallel feature extraction core
   num_peaks <- length(consensus_peaks)
-  # P1-4: process regions in batches so the base-level NumericList for all
+  # Process regions in batches so the base-level NumericList for all
   # domains never has to reside in memory at once (the real memory bottleneck).
   batch_size <- 5000L
 
@@ -271,7 +269,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 
       # ---- load native peaks (optional) for breadth geometry ----------------
       # Native geometry is computed from the sample's own peak calls, NOT from
-      # the shared consensus universe (Breadth-Super design revision).
+      # the shared consensus universe.
       native_peaks <- NULL
       if (!is.na(peak_path)) {
         native_peaks <- rtracklayer::import(peak_path)
@@ -293,12 +291,12 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
              NWcnt = rep(NA_real_, num_peaks))
       }
 
-      # ---- cache / import coverage in batches (P1-4) ---------------------
-      # P0-A: the cache must store RAW imported coverage (before any
-      # negative_policy / baseline handling). Sanitization happens AFTER
-      # loading, using the CURRENT run's parameters — otherwise a previous
-      # clip_zero run would hide negatives from a later "error" run, and a
-      # later "allow" run would consume clipped (contaminated) signal.
+      # ---- cache / import coverage in batches ----------------------------
+      # The cache stores raw imported coverage before negative-policy or
+      # baseline handling. Sanitization happens after loading, using the current
+      # run's parameters; otherwise cached output from a clip_zero run would
+      # hide negatives from a later "error" run, and an "allow" run would
+      # consume clipped signal.
       if (use_cache) {
         cache_file <- file.path(cache_dir, paste0(.cache_key(bw_path), ".rds"))
         if (file.exists(cache_file)) {
@@ -317,7 +315,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 
       if (!is.null(bw_views)) {
         # ---- extract from RAW cached NumericList ----------------------------
-        # Sanitize with the CURRENT negative_policy (P0-A, P0-1).
+        # Sanitize with the current negative_policy.
         n_neg <- sum(vapply(bw_views, function(x) sum(x < 0, na.rm = TRUE), integer(1)))
         n_positions <- sum(vapply(bw_views, function(x) sum(!is.na(x)), integer(1)))
         bw_views <- lapply(bw_views, function(x) {
@@ -329,10 +327,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         intensities <- sum(bw_views, na.rm = TRUE)
         dispersions <- vapply(bw_views, .signal_dispersion, numeric(1))
       } else {
-        # ---- batch import to bound memory (P1-4) ---------------------------
-        # P2-fix: accumulate into DOUBLE vectors. batch_ints was integer(); R
-        # silently promotes on assignment so values were never truncated, but
-        # the type was misleading for continuous (e.g. CPM/RPGC) signal.
+        # ---- batch import to bound memory ----------------------------------
+        # Accumulate continuous signal in double-precision vectors.
         batch_ints <- numeric(num_peaks)
         batch_disp <- rep(NA_real_, num_peaks)
         batch_neg <- integer(num_peaks)
@@ -343,15 +339,15 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
           idx <- ((b - 1) * batch_size + 1):min(b * batch_size, num_peaks)
           cvg_b <- .import_bw_views(bw_path, consensus_peaks[idx])
           # Count negatives BEFORE sanitization so the fraction reflects the
-          # raw input (P0-1); error policy throws inside .sanitize_signal.
+          # raw input; the error policy is applied by .sanitize_signal().
           batch_neg[idx] <- vapply(cvg_b, function(x) sum(x < 0, na.rm = TRUE), integer(1))
           batch_pos[idx] <- vapply(cvg_b, function(x) sum(!is.na(x)), integer(1))
-          # Store RAW views for the cache (P0-A): sanitization below must not
+          # Store raw views for the cache; sanitization below must not
           # be persisted.
           if (use_cache) {
             for (j in seq_along(idx)) raw_views[[idx[j]]] <- cvg_b[[j]]
           }
-          # Sanitize BEFORE any feature computation (P0-1): the same vector is
+          # Sanitize before any feature computation: the same vector is
           # used for Intensity, SignalDispersion and custom features, so
           # clip_zero semantics are consistent across all of them.
           cvg_b <- lapply(cvg_b, function(x) {
@@ -368,8 +364,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         n_neg <- sum(batch_neg)
         n_positions <- sum(batch_pos)
 
-        # Persist RAW per-sample coverage for future runs (P0-A, P1-3 key).
-        # NEVER persist sanitized views.
+        # Persist raw per-sample coverage for future runs. Sanitized views must
+        # not be cached because negative_policy can change between runs.
         if (use_cache) {
           cache_file <- file.path(cache_dir, paste0(.cache_key(bw_path), ".rds"))
           tryCatch(saveRDS(IRanges::NumericList(raw_views), cache_file),
@@ -378,7 +374,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
       }
 
       # Correct negative-fraction denominator: negative positions over total
-      # signal positions (P0-1). After clip_zero no negatives remain.
+      # signal positions. After clip_zero no negatives remain.
       neg_frac <- if (n_positions > 0) n_neg / n_positions else 0
       if (n_neg > 0 && negative_policy == "error") {
         stop("BigWig '", bw_path, "' contains ", n_neg,
@@ -438,7 +434,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   }, BPPARAM = param)
 
   # Check for per-sample failures in parallel computation.
-  # P1-10: default is to STOP rather than silently drop samples, because a
+  # The default is to stop rather than silently drop samples, because a
   # failed replicate silently changes the sample composition (e.g. Treatment
   # n=2 -> n=1) and invalidates downstream group analyses.
   error_flags <- !vapply(feature_list, function(x) is.null(x$Error), logical(1))
@@ -455,7 +451,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
                     sum(error_flags), paste(error_msgs, collapse = "\n  ")))
     feature_list <- feature_list[!error_flags]
     sample_sheet <- sample_sheet[!error_flags, , drop = FALSE]
-    has_peaks <- has_peaks[!error_flags]   # P1-8: keep availability aligned
+    has_peaks <- has_peaks[!error_flags]
     if (nrow(sample_sheet) == 0) {
       stop("All samples failed. Please check your BigWig files.")
     }
@@ -471,12 +467,11 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   sample_names <- sample_sheet$SampleID
 
   # Assemble matrices with do.call(cbind, ...) instead of explicit for-loops.
-  # NOTE (P1-5): the static genomic interval length (IntervalWidth) is moved to
+  # Static genomic interval length (IntervalWidth) is stored in
   # rowData — it is identical across samples and is not a per-sample signal
-  # feature. NOTE (v1.0 design): canonical assays are Intensity,
+  # feature. Canonical assays are Intensity,
   # SignalDispersion and (when peak files are provided) NativeMaxPeakWidth /
-  # NativeOccupiedWidth / NativePeakCount. RobustHeight and EffectiveWidth have
-  # been removed from the core design.
+  # NativeOccupiedWidth / NativePeakCount.
   mat_list <- list(
     Intensity = do.call(cbind, lapply(feature_list, function(x) x$I)),
     SignalDispersion = do.call(cbind, lapply(feature_list, function(x) x$D)),
@@ -519,7 +514,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   }
 
   # 6. Build the final SummarizedExperiment object
-  # Ensure unique Domain_IDs (P1-9): duplicate or NULL names would silently
+  # Duplicate or missing Domain_IDs would silently
   # mis-map during match() in downstream ranking.
   se_ranges <- consensus_peaks
   if (is.null(names(se_ranges)) || any(names(se_ranges) == "") ||
@@ -535,15 +530,15 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
     colData = S4Vectors::DataFrame(sample_sheet, row.names = sample_names)
   )
 
-  # Static genomic interval length lives in rowData (P1-5), not as an assay.
+  # Static genomic interval length lives in rowData, not as an assay.
   rowData(se)$IntervalWidth <- GenomicRanges::width(se_ranges)
 
   # Record the negative-signal fraction per sample as a QC provenance column
-  # (P0-1): the fraction of raw signal positions that were negative before the
+  # as the fraction of raw signal positions that were negative before the
   # negative policy was applied.
   se$NegativeFraction <- vapply(feature_list, function(x) x$NegFraction, numeric(1))
 
-  # ---- Metadata contract (object-contract design) ---------------------------
+  # ---- Metadata contract ----------------------------------------------------
   S4Vectors::metadata(se)$signal_contract <- list(
     input_type = "BigWig",
     required_signal = "normalized non-negative continuous signal",
@@ -552,7 +547,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
     fail_action = fail_action,
     genome = genome_id
   )
-  # Domain-source / caller provenance (heterochromatin plan 2026-08-10):
+  # Domain-source and caller provenance:
   # broad repressive marks (H3K27me3/H3K9me3) rely on upstream broad-domain
   # callers (SICER / epic2 / RECOGNICER / MACS2_broad / precalled), whose
   # window/gap/boundary strategy determines domain width. Optional sample-sheet
@@ -686,7 +681,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 }
 
 
-# Sanitize a per-region signal vector according to the negative policy (P0-1).
+# Sanitize a per-region signal vector according to the negative policy.
 #
 # This MUST be applied once, before any feature (Intensity, SignalDispersion,
 # custom) is computed, so that clip_zero semantics are consistent across all
@@ -694,7 +689,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 # genomic coordinate axis for span metrics).
 .sanitize_signal <- function(x, negative_policy = c("error", "clip_zero", "allow")) {
   negative_policy <- match.arg(negative_policy)
-  # keep positions: NA -> 0 so genomic span metrics are not compressed (P1-25)
+  # Keep positions: NA -> 0 so genomic span metrics are not compressed.
   x[is.na(x)] <- 0
   if (negative_policy == "clip_zero") {
     x[x < 0] <- 0
@@ -726,7 +721,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 # peak-caller boundary. Two domains with the same occupied width but different
 # internal architecture (compact vs multi-modal) receive different values. This
 # is a SECONDARY within-domain architecture descriptor, not the Breadth-Super
-# caller (Breadth-Super uses native PeakWidth; design doc 2026-08-09).
+# caller (Breadth-Super uses native PeakWidth).
 .signal_dispersion <- function(x) {
   xc <- as.numeric(x)
   xc[is.na(xc)] <- 0
@@ -740,7 +735,7 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
 }
 
 
-# Native peak geometry within each shared domain (v1.0 breadth design).
+# Native peak geometry within each shared domain.
 #
 # Computes per-domain sample-specific breadth quantities from the sample's own
 # native peak calls, restricted to the shared domain intervals:
