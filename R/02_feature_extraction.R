@@ -651,8 +651,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         stop(
           "BigWig region import failed on Windows through the upstream ",
           "rtracklayer/UCSC backend ('", msg, "'). This is a platform-specific ",
-          "upstream limitation (rtracklayer#52/#62/#128/#151), not an ",
-          "epiPortrait analysis error. Options: ingest BigWigs on ",
+          "upstream limitation (rtracklayer#52/#62/#128/#151); it does not ",
+          "arise from epiPortrait's analysis logic. Options: ingest BigWigs on ",
           "Linux/macOS, or provide per-sample native peak (BED/narrowPeak) ",
           "files / a pre-built portrait matrix so BigWig I/O is not needed.",
           call. = FALSE)
