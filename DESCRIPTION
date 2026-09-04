@@ -1,7 +1,7 @@
 Package: epiPortrait
 Type: Package
 Title: Replicate-Aware Epigenomic Domain Profiling
-Version: 0.99.2
+Version: 0.99.3
 Depends: R (>= 4.5.0)
 Authors@R: c(
     person(given = "Ying", family = "ZHANG", 

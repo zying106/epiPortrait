@@ -1,3 +1,19 @@
+# epiPortrait 0.99.3
+
+* Docker/docs polish and manuscript-readiness pass performed on top of 0.99.2;
+  no public API change. Aligned documentation wording with
+  `analyze_differential_domains()` (limma-on-continuous-intensity caveat, NA
+  != zero-signal semantics) and synced regenerated man pages.
+
+# epiPortrait 0.99.2
+
+* Removed `inst/CITATION` until a manuscript with a DOI is available
+  (README carries the inline citation instead).
+* `codecov.yml`: patch coverage gate set to `informational` so a continuation
+  line (e.g. a string literal) that maps poorly to coverage feedback does not
+  fail commits; README badge switched to the token-free codecov.svg.
+* Windows notes and error messages clarified.
+
 # epiPortrait 0.99.1
 
 * Made elbow calling orientation-aware so inverse/left-loaded ranked curves
