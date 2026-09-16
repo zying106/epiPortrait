@@ -150,7 +150,11 @@ gsea_epi_genes <- function(ranked, universe, org_db = NULL, key_type = NULL,
     ont = ontology, minGSSize = as.integer(min_gs_size),
     maxGSSize = min(as.integer(max_gs_size), length(v)),
     pvalueCutoff = 1, pAdjustMethod = p_adjust_method,
-    verbose = verbose, seed = FALSE, by = "fgsea"))
+    # NOTE: do NOT pass `by = "fgsea"`. Newer clusterProfiler releases removed
+    # that argument (GSEA now always uses the fgsea/enrichit backend and extra
+    # arguments are forwarded to enrichit::gsea_gson, which rejects `by`).
+    # Passing it broke gseGO() on the Bioconductor build.
+    verbose = verbose, seed = FALSE))
   result <- .tidy_gsea_result(as.data.frame(cp), ontology, padj_cutoff)
   mapping$terms_tested <- nrow(result)
   mapping$terms_significant <- sum(result$significant, na.rm = TRUE)

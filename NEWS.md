@@ -1,5 +1,10 @@
 # epiPortrait 0.99.4
 
+* `gsea_epi_genes()` no longer passes `by = "fgsea"` to
+  `clusterProfiler::gseGO()`. Newer clusterProfiler releases removed that
+  argument (GSEA always uses the fgsea/enrichit backend and forwards extra
+  arguments to `enrichit::gsea_gson`, which rejects `by`), which made the
+  function fail on current Bioconductor devel.
 * Made enrichment examples runnable (removed all `\donttest{}` man-page tags).
   The examples for `enrich_epi_genes()`, `enrich_epi_domains()`,
   `gsea_epi_genes()`, `compare_epi_enrichment()`, `plot_epi_enrichment()` and
