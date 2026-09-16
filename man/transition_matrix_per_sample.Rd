@@ -39,7 +39,8 @@ given, all other time points are targets. When NULL, all ordered pairs
 \code{<prefix>_SampleTransition__<ref>_vs_<target>} (labels:
 \code{Persistent_<value>}, \code{<from>_to_<to>}, \code{Uncertain},
 matching \code{compare_superdomain_classes()} semantics) and
-\code{metadata(se)$transitions[[key]]} entries with the counts tables.
+\code{metadata(se)$transitions[["sample__<prefix>__<ref>_vs_<target>"]]}
+entries with the counts tables.
 }
 \description{
 Computes super-domain / class transitions between per-sample

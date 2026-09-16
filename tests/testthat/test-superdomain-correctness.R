@@ -94,7 +94,9 @@ test_that("explicit Uncertain propagates through combined transitions", {
   rowData(se)$Combined_Class__Treatment <- rep("Typical", nrow(se))
   rowData(se)$Combined_Class__Control[1] <- "Uncertain"
   se <- compare_superdomain_classes(se, "Control", "Treatment")
-  expect_equal(rowData(se)$Combined_Relative_Class_Transition[1], "Uncertain")
+  expect_equal(rowData(se)[[
+    "Combined_Class_Transition__relative__Control_vs_Treatment"]][1],
+    "Uncertain")
 })
 
 test_that("caller validates resampling and replicate thresholds", {
@@ -131,12 +133,34 @@ test_that("build_portrait_matrix enforces unique domain IDs", {
   expect_equal(nrow(se), length(peaks))
 })
 
-# ---- P1-9 / 17.5: IntervalWidth ranking works and uses rowData --------------
-test_that("call_super_domains ranks on IntervalWidth from rowData", {
+# ---- P1-9 / 17.5: IntervalWidth is one static rowData ranking ---------------
+test_that("call_super_domains ranks IntervalWidth once without pseudo-replicates", {
   se <- call_super_domains(example_se, feature = "IntervalWidth",
                            method = "tangent", log_transform = FALSE, verbose = FALSE)
   expect_true("IntervalWidth_Domain_Type" %in% colnames(rowData(se)))
   expect_true("IntervalWidth_Super_Element" %in% rowData(se)$IntervalWidth_Domain_Type)
+  expect_false("IntervalWidth_Replicate_Support" %in% colnames(rowData(se)))
+  expect_length(grep("^IntervalWidth_Support__", colnames(rowData(se))), 0L)
+
+  prov <- get_call_provenance(se, "IntervalWidth")
+  expect_identical(prov$mode, "static")
+  expect_true(prov$static_feature)
+  expect_identical(prov$feature_source, "rowData")
+  expect_null(prov$replicates)
+  expect_null(prov$groups)
+})
+
+test_that("call_super_domains rejects sample modes for static rowData", {
+  expect_error(
+    call_super_domains(example_se, feature = "IntervalWidth",
+                       mode = "per_group", verbose = FALSE),
+    "Static rowData feature.*cannot be called"
+  )
+  expect_error(
+    call_super_domains(example_se, feature = "Width",
+                       mode = "per_sample", verbose = FALSE),
+    "Static rowData feature.*cannot be called"
+  )
 })
 
 # ---- P0-10: hockey-stick plot labels match caller output --------------------
@@ -227,12 +251,70 @@ test_that("relative transition is not labelled as absolute Gain/Loss", {
                            verbose = FALSE)
   se <- compare_superdomains(se, group_var = "Condition",
                              ref_group = "Control", target_group = "Treatment")
-  tr <- rowData(se)$Intensity_Relative_Transition
+  tr <- rowData(se)[[
+    "Intensity_Transition__relative__Control_vs_Treatment"]]
   expect_false(any(tr %in% c("Gain", "Loss"), na.rm = TRUE))
   expect_true(all(tr[!is.na(tr)] %in%
                     c("Persistent_Super", "Persistent_Typical",
                       "Relative_Prominence_Up", "Relative_Prominence_Down",
                       "Uncertain")))
+})
+
+test_that("feature transitions retain every scope and group pair", {
+  se <- call_super_domains(example_se, feature = "Intensity",
+                           mode = "per_group", group_var = "Condition",
+                           method = "tangent", log_transform = FALSE,
+                           verbose = FALSE)
+  se <- compare_superdomains(se, group_var = "Condition",
+                             ref_group = "Control", target_group = "Treatment",
+                             cutoff_scope = "relative")
+  relative_values <- rowData(se)[[
+    "Intensity_Transition__relative__Control_vs_Treatment"]]
+  se <- compare_superdomains(se, group_var = "Condition",
+                             ref_group = "Control", target_group = "Treatment",
+                             cutoff_scope = "reference")
+
+  expect_identical(
+    rowData(se)[["Intensity_Transition__relative__Control_vs_Treatment"]],
+    relative_values)
+  expect_true("Intensity_Transition__reference__Control_vs_Treatment" %in%
+                colnames(rowData(se)))
+  transition_keys <- names(S4Vectors::metadata(se)$transitions)
+  expect_true(all(c(
+    "feature__Intensity__relative__Control_vs_Treatment",
+    "feature__Intensity__reference__Control_vs_Treatment") %in%
+      transition_keys))
+  expect_false(any(c("Intensity_Relative_Transition",
+                     "Intensity_Transition__reference") %in%
+                   colnames(rowData(se))))
+  expect_false(any(vapply(
+    S4Vectors::metadata(se)$transitions[transition_keys],
+    function(x) "compatibility_alias" %in% names(x), logical(1))))
+})
+
+test_that("combined transitions retain multiple group pairs", {
+  se <- example_se
+  rowData(se)$Combined_Class__Control <- rep("Typical", nrow(se))
+  rowData(se)$Combined_Class__Treatment <- rep("Dual-Super", nrow(se))
+  rowData(se)$Combined_Class__Recovery <- rep("Breadth-Super", nrow(se))
+
+  se <- compare_superdomain_classes(se, "Control", "Treatment")
+  first <- rowData(se)[[
+    "Combined_Class_Transition__relative__Control_vs_Treatment"]]
+  se <- compare_superdomain_classes(se, "Control", "Recovery")
+
+  expect_identical(
+    rowData(se)[[
+      "Combined_Class_Transition__relative__Control_vs_Treatment"]],
+    first)
+  expect_true("Combined_Class_Transition__relative__Control_vs_Recovery" %in%
+                colnames(rowData(se)))
+  expect_true(all(c(
+    "combined__relative__Control_vs_Treatment",
+    "combined__relative__Control_vs_Recovery") %in%
+      names(S4Vectors::metadata(se)$transitions)))
+  expect_false("Combined_Relative_Class_Transition" %in%
+                 colnames(rowData(se)))
 })
 
 test_that("reference cutoff transition works and labels Gain/Loss", {
@@ -243,7 +325,8 @@ test_that("reference cutoff transition works and labels Gain/Loss", {
   se <- compare_superdomains(se, group_var = "Condition",
                              ref_group = "Control", target_group = "Treatment",
                              cutoff_scope = "reference")
-  expect_true("Intensity_Transition__reference" %in% colnames(rowData(se)))
+  expect_true("Intensity_Transition__reference__Control_vs_Treatment" %in%
+                colnames(rowData(se)))
 })
 
 # ---- v1.0: Breadth-Super peak-level calling semantics ------------------------
@@ -286,10 +369,15 @@ test_that("Breadth no-call (constant widths) -> no evidence -> Uncertain", {
     rep(list(np), ncol(se)), colnames(se))
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   prov <- S4Vectors::metadata(se)$superdomain_calls$Breadth
   expect_equal(prov$replicates$S1$call_status, "no_call")
   expect_true(all(is.na(rowData(se)$Breadth_Call__S1)))
+  ev <- get_breadth_evidence(se)
+  rs <- get_breadth_evidence(se, type = "reason")
+  expect_true(all(ev == "NoCall"))
+  expect_true(all(rs == "inflection_no_call"))
 })
 
 test_that("Breadth below-overlap-threshold peak gives Unmapped and no evidence", {
@@ -301,11 +389,15 @@ test_that("Breadth below-overlap-threshold peak gives Unmapped and no evidence",
   se <- .make_breadth_se(np, n_samples = 1)
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   mapping <- S4Vectors::metadata(se)$breadth_peak_mapping
   expect_true(mapping$MappingStatus[mapping$PeakWidth == 351] == "Unmapped")
   # no unique evidence for either domain -> Uncertain
   expect_true(all(is.na(rowData(se)$Breadth_Call__S1)))
+  expect_true(all(get_breadth_evidence(se) == "NoCall"))
+  expect_true(all(get_breadth_evidence(se, type = "reason") ==
+                    "overlap_without_unique_assignment"))
 })
 
 test_that("Breadth ambiguous tie gives no evidence to either domain", {
@@ -316,10 +408,12 @@ test_that("Breadth ambiguous tie gives no evidence to either domain", {
   se <- .make_breadth_se(np, n_samples = 1)
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   mapping <- S4Vectors::metadata(se)$breadth_peak_mapping
   expect_true(mapping$MappingStatus[mapping$PeakWidth == 501] == "Ambiguous")
   expect_true(all(is.na(rowData(se)$Breadth_Call__S1)))
+  expect_true(all(get_breadth_evidence(se) == "NoCall"))
 })
 
 test_that("Breadth uniquely-mapped broad peak gives Super evidence once", {
@@ -329,6 +423,7 @@ test_that("Breadth uniquely-mapped broad peak gives Super evidence once", {
   se <- .make_breadth_se(np, n_samples = 1)
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   mapping <- S4Vectors::metadata(se)$breadth_peak_mapping
   m_test <- mapping[mapping$PeakWidth == 251, ]
@@ -336,6 +431,8 @@ test_that("Breadth uniquely-mapped broad peak gives Super evidence once", {
   expect_equal(m_test$SharedDomainID, "epiDomain_000002")
   expect_equal(unname(rowData(se)$Breadth_Call__S1),
                c(NA_character_, "Breadth_Super_Element"))
+  expect_equal(unname(get_breadth_evidence(se)[, "S1"]),
+               c("PeakAbsent", "Broad"))
 })
 
 test_that("Breadth uniquely-mapped non-broad peak gives Typical evidence", {
@@ -344,9 +441,12 @@ test_that("Breadth uniquely-mapped non-broad peak gives Typical evidence", {
   se <- .make_breadth_se(np, n_samples = 1)
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   expect_equal(unname(rowData(se)$Breadth_Call__S1),
                c("Breadth_Typical", NA_character_))
+  expect_equal(unname(get_breadth_evidence(se)[, "S1"]),
+               c("Typical", "PeakAbsent"))
 })
 
 test_that("Breadth broad evidence wins over typical in the same domain", {
@@ -358,6 +458,7 @@ test_that("Breadth broad evidence wins over typical in the same domain", {
   se <- .make_breadth_se(np, n_samples = 1)
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   ev <- unname(rowData(se)$Breadth_Call__S1)
   expect_equal(ev, c("Breadth_Typical", "Breadth_Super_Element"))
@@ -368,6 +469,7 @@ test_that("Breadth mapping provenance carries overlap metrics and real Domain_ID
   se <- .make_breadth_se(np, n_samples = 1)
   se <- call_super_domains(se, feature = "Breadth",
                            mode = "per_sample",
+                           min_broad_width_bp = NULL,
                            verbose = FALSE)
   m <- S4Vectors::metadata(se)$breadth_peak_mapping
   expect_true(all(c("OverlapBp", "PeakOverlapFraction",
@@ -398,8 +500,137 @@ test_that("Breadth-Super stores peak-level provenance", {
   expect_equal(prov$calling_paradigm,
                "peak-level native PeakWidth, unique mapping, replicate aggregation")
   expect_false(is.null(prov$min_peak_overlap_fraction))
+  expect_equal(prov$min_broad_width_bp, 500)
+  expect_equal(prov$n_sharp_peak_replicates, 0L)
   expect_false(is.null(S4Vectors::metadata(se)$breadth_peak_calls))
   expect_false(is.null(S4Vectors::metadata(se)$breadth_peak_mapping))
+  expect_setequal(prov$evidence_levels,
+                  c("Broad", "Typical", "PeakAbsent", "NoCall"))
+  expect_false(is.null(S4Vectors::metadata(se)$breadth_domain_evidence))
+})
+
+test_that("Breadth group presence summaries do not let NoCall inflate support", {
+  evidence <- matrix(c(
+    "Broad",      "Typical",    "NoCall",
+    "PeakAbsent", "PeakAbsent", "NoCall",
+    "Broad",      "PeakAbsent", "NoCall",
+    "NoCall",     "NoCall",     "NoCall"
+  ), nrow = 4, byrow = TRUE)
+  res <- epiPortrait:::.aggregate_breadth_presence(
+    evidence, support_rule = "majority")
+  expect_equal(res$status,
+               c("Present", "PeakAbsent", "Mixed", "NoCall"))
+  expect_equal(res$presence_fraction, c(2 / 3, 0, 1 / 3, 0))
+  expect_equal(res$absence_fraction, c(0, 2 / 3, 1 / 3, 0))
+  expect_equal(res$n_assessable, c(2, 2, 2, 0))
+})
+
+test_that("Breadth exposes conservative PeakAbsent summaries without changing calls", {
+  np <- GenomicRanges::GRanges("chr1", IRanges::IRanges(525, 775))
+  se <- .make_breadth_se(np, n_samples = 2)
+  colData(se)$Condition <- c("A", "A")
+  se <- call_super_domains(
+    se, feature = "Breadth", mode = "per_group", group_var = "Condition",
+    min_broad_width_bp = NULL, verbose = FALSE)
+
+  expect_equal(unname(rowData(se)$Breadth_PresenceStatus__A),
+               c("PeakAbsent", "Present"))
+  expect_equal(unname(rowData(se)$Breadth_AbsenceFraction__A), c(1, 0))
+  expect_equal(unname(rowData(se)$Breadth_PresenceFraction__A), c(0, 1))
+  expect_equal(unname(rowData(se)$Breadth_N_Assessable__A), c(2, 2))
+  # The orthogonal layer must not turn PeakAbsent into canonical Typical.
+  expect_equal(unname(rowData(se)$Breadth_Call__A),
+               c(NA_character_, "Breadth_Super_Element"))
+
+  long <- get_breadth_evidence(se, group = "A", long = TRUE)
+  expect_equal(nrow(long), nrow(se) * ncol(se))
+  expect_true(all(c("Domain_ID", "SampleID", "Group", "Evidence", "Reason") %in%
+                    colnames(long)))
+  expect_true(all(long$Group == "A"))
+  expect_true(validate_epiportrait_object(se))
+})
+
+test_that("Breadth evidence accessor validates missing results and groups", {
+  expect_error(get_breadth_evidence(example_se), "No Breadth evidence")
+  se <- call_super_domains(example_se, feature = "Breadth",
+                           mode = "per_group", group_var = "Condition",
+                           verbose = FALSE)
+  expect_error(get_breadth_evidence(se, group = "missing"), "not found")
+  expect_equal(dim(get_breadth_evidence(se, group = "Control")),
+               c(nrow(se), 3L))
+})
+
+# ---- sharp-peak regime guard (min_broad_width_bp) ----------------------------
+# Helper: toy SE whose native peaks are all < 500 bp but still form a clear
+# (callable) elbow, i.e. exactly the situation the guard must refuse.
+.make_sharp_peak_se <- function() {
+  w <- c(rep(100:120, length.out = 40), rep(220:280, length.out = 20))
+  np <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(start = seq(1000, by = 400, length.out = 60),
+                             width = w))
+  domains <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(c(1000, 5000), c(1400, 5400)),
+    seqinfo = GenomeInfoDb::Seqinfo("chr1", 1000000))
+  se <- SummarizedExperiment::SummarizedExperiment(
+    assays = list(Intensity = matrix(1, 2, 2),
+                  SignalDispersion = matrix(1, 2, 2)),
+    rowRanges = domains)
+  rownames(se) <- c("d1", "d2")
+  colnames(se) <- c("S1", "S2")
+  S4Vectors::metadata(se)$native_peaks <- stats::setNames(list(np, np),
+                                                           c("S1", "S2"))
+  se
+}
+
+test_that("Breadth withholds evidence when native widths are in the sharp regime", {
+  # The elbow is findable on these narrow widths (so the pre-guard caller would
+  # confidently produce Breadth-Super labels), but no peak is meaningfully
+  # broad. The guard must turn every replicate into no_call -> Uncertain, with
+  # an explicit provenance flag and a single warning.
+  se <- .make_sharp_peak_se()
+  expect_warning(
+    se <- call_super_domains(se, feature = "Breadth", mode = "per_sample",
+                             verbose = FALSE),
+    "sharp-peak")
+  prov <- S4Vectors::metadata(se)$superdomain_calls$Breadth
+  expect_equal(prov$n_sharp_peak_replicates, 2L)
+  expect_true(all(vapply(prov$replicates,
+                         function(r) identical(r$call_status, "no_call"),
+                         logical(1))))
+  expect_true(all(vapply(prov$replicates,
+                         function(r) isTRUE(r$sharp_peak_regime), logical(1))))
+  expect_true(all(is.na(rowData(se)$Breadth_Call__S1)))
+  expect_true(all(is.na(rowData(se)$Breadth_Call__S2)))
+})
+
+test_that("min_broad_width_bp = NULL disables the sharp-peak guard", {
+  se <- .make_sharp_peak_se()
+  se <- call_super_domains(se, feature = "Breadth", mode = "per_sample",
+                           min_broad_width_bp = NULL, verbose = FALSE)
+  prov <- S4Vectors::metadata(se)$superdomain_calls$Breadth
+  expect_equal(prov$n_sharp_peak_replicates, 0L)
+  expect_false(all(is.na(rowData(se)$Breadth_Call__S1)))
+})
+
+test_that("sharp-peak guard also applies to the quantile path", {
+  se <- .make_sharp_peak_se()
+  expect_warning(
+    se <- call_super_domains(se, feature = "Breadth", mode = "per_sample",
+                             quantile_cutoff = 0.9, verbose = FALSE),
+    "sharp-peak")
+  expect_true(all(is.na(rowData(se)$Breadth_Call__S1)))
+})
+
+test_that("min_broad_width_bp accepts NULL and rejects invalid values", {
+  expect_error(
+    call_super_domains(example_se, feature = "Breadth",
+                       min_broad_width_bp = -1),
+    "min_broad_width_bp")
+  # example_se carries ~12 kb native peaks in each condition -> guard passes
+  se <- call_super_domains(example_se, feature = "Breadth",
+                           mode = "per_sample", verbose = FALSE)
+  prov <- S4Vectors::metadata(se)$superdomain_calls$Breadth
+  expect_equal(prov$n_sharp_peak_replicates, 0L)
 })
 
 # ---- P0-B: global_consensus honors majority (not support>=1) ----------------
@@ -474,7 +705,8 @@ test_that("compare_superdomains reference/pooled inherit fraction + tie_policy",
   se <- compare_superdomains(se, group_var = "Condition",
                              ref_group = "Control", target_group = "Treatment",
                              cutoff_scope = "reference")
-  tr <- S4Vectors::metadata(se)$transitions[["Control_vs_Treatment"]]
+  tr <- S4Vectors::metadata(se)$transitions[[
+    "feature__Intensity__reference__Control_vs_Treatment"]]
   expect_equal(tr$cutoff_scope, "reference")
   expect_equal(tr$support_rule, "fraction")
   expect_equal(tr$min_replicate_support, 0.67)
@@ -488,7 +720,8 @@ test_that("compare_superdomains reference/pooled inherit fraction + tie_policy",
   se2 <- compare_superdomains(se2, group_var = "Condition",
                               ref_group = "Control", target_group = "Treatment",
                               cutoff_scope = "pooled")
-  tr2 <- S4Vectors::metadata(se2)$transitions[["Control_vs_Treatment"]]
+  tr2 <- S4Vectors::metadata(se2)$transitions[[
+    "feature__Intensity__pooled__Control_vs_Treatment"]]
   expect_equal(tr2$min_replicate_support, 0.67)
   expect_equal(tr2$tie_policy, "inclusive")
   expect_true(is.null(tr2$min_valid_replicates) || is.numeric(tr2$min_valid_replicates))

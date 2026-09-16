@@ -8,13 +8,17 @@
 #' peak width), and **SignalDispersion** (continuous within-domain signal
 #' architecture). Intensity and Breadth are the canonical classification axes;
 #' super-domain states (Intensity-Super, Breadth-Super, Dual-Super) are called
-#' with replicate-level evidence and explicit support rules, while
-#' SignalDispersion is retained as a secondary architecture descriptor. The
-#' package supports condition transitions, continuous domain-width remodeling,
+#' with replicate-level evidence and explicit support rules. An orthogonal
+#' Breadth evidence layer distinguishes operational peak-call absence from a
+#' technical or assignment no-call, while SignalDispersion is retained as a
+#' secondary architecture descriptor. The package supports condition
+#' transitions, continuous domain-width remodeling,
 #' signal quality control, genome-aware domain annotation, optional BEDPE
-#' contact evidence, expression-aware candidate-gene prioritization, and
-#' result visualization. Primary use case: histone-mark ChIP-seq /
-#' CUT&Tag; continuous-track workflows also apply to ATAC-seq-derived domains.
+#' contact evidence, expression-aware candidate-gene prioritization,
+#' domain-aware functional interpretation (GO ORA / GSEA against a
+#' domain-derived testable universe), and result visualization. Primary use
+#' case: histone-mark ChIP-seq / CUT&Tag; continuous-track workflows also apply
+#' to ATAC-seq-derived domains.
 #'
 #' @section Core workflow:
 #' \enumerate{
@@ -23,6 +27,7 @@
 #'   \item \code{\link{build_portrait_matrix}} — Extract portrait matrix from BigWigs
 #'   \item \code{\link{normalize_portrait}} — Normalize Intensity while preserving SignalDispersion
 #'   \item \code{\link{call_super_domains}} — Intensity / peak-level Breadth calling
+#'   \item \code{\link{get_breadth_evidence}} — Audit peak presence versus no-call
 #'   \item \code{\link{annotate_epi_domains}} — Domain-aware annotation & candidate genes
 #' }
 #'
@@ -40,6 +45,15 @@
 #'   \item \code{\link{compare_superdomains}} — Condition-aware super-domain transitions
 #'   \item \code{\link{filter_promoter_peaks}} — Exclude promoter-proximal peaks
 #'   \item \code{\link{filter_blacklist}} — Filter blacklisted regions
+#' }
+#'
+#' @section Functional interpretation:
+#' \itemize{
+#'   \item \code{\link{get_domain_gene_universe}} — Domain-derived testable gene universe
+#'   \item \code{\link{enrich_epi_domains}} — ORA / GSEA on domain phenotypes and remodeling
+#'   \item \code{\link{rank_epi_genes}} — Continuous domain score to signed gene ranking
+#'   \item \code{\link{compare_epi_enrichment}} — Shared-universe comparison across groups
+#'   \item \code{\link{plot_epi_enrichment}} — Comparative effect-size heatmap
 #' }
 #'
 #' @docType package
@@ -62,5 +76,6 @@ utils::globalVariables(c(
   "From", "To", "Level", "Status", "N",
   "Occ_Start", "Occ_End",
   "Cause", "Freq", "Prop", "LabelY", "Frac", "FillKey",
-  "logFC", "negLog10P"
+  "logFC", "negLog10P",
+  "group", "term_name", "effect", "label"
 ))

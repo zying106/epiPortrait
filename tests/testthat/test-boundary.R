@@ -59,6 +59,16 @@ test_that("get_call_provenance returns NULL when no calls stored", {
   expect_null(get_call_provenance(example_se, "Intensity"))
 })
 
+test_that("validation rejects misaligned Breadth evidence", {
+  se <- call_super_domains(example_se, feature = "Breadth",
+                           mode = "per_group", group_var = "Condition",
+                           verbose = FALSE)
+  bad <- se
+  S4Vectors::metadata(bad)$breadth_domain_evidence$evidence <-
+    S4Vectors::metadata(bad)$breadth_domain_evidence$evidence[-1, , drop = FALSE]
+  expect_error(validate_epiportrait_object(bad), "domain x sample matrix")
+})
+
 test_that("get_call_results long format returns Group/Call columns", {
   se <- call_super_domains(example_se, feature = "Intensity",
                            mode = "per_group", group_var = "Condition",

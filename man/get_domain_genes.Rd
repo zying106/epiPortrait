@@ -14,6 +14,7 @@ get_domain_genes(
   min_expression = NULL,
   unique_genes = TRUE,
   nearest_tss_cutoff_bp = getOption("epiPortrait.nearest_tss_cutoff_bp", 10000),
+  max_per_domain = NULL,
   rank_by = c("tier", "bedpe_score")
 )
 }
@@ -49,9 +50,16 @@ ranked above \code{gene_body_overlap}/distal links; a currently-nearest
 but FAR TSS (beyond this cutoff) is downgraded to the lowest evidence tier.
 This prevents a "nearest but remote" gene (e.g. 500 kb away) from ranking
 equal to \code{promoter_overlap} evidence. Defaults to the option
-\code{epiPortrait.nearest_tss_cutoff_bp}, or 10000 if unset. This keeps
-\code{annotate_epi_domains()} and \code{get_domain_genes()} on the same
-proximity definition.}
+\code{epiPortrait.nearest_tss_cutoff_bp}, or 10000 if unset. Pass the SAME
+value to \code{annotate_epi_domains()} (which stores \code{best_tier} in
+the dedup table) so the stored and recomputed tiers cannot disagree.}
+
+\item{max_per_domain}{Integer or NULL. When set, keep at most this many
+genes per domain, selected by \code{candidate_priority}. This is the
+transparent alternative to permutation-based background control for
+functional enrichment: wide domains would otherwise link more genes and
+inflate their opportunity to be selected. NULL (default) keeps all
+domain-gene pairs, preserving the original behaviour.}
 
 \item{rank_by}{Character. Primary ordering key for \code{candidate_priority}.
 \itemize{
@@ -68,9 +76,12 @@ prioritization (dominant-loop style).
 }
 \value{
 A data.frame: domain_id, gene_id, gene_symbol, relation_types,
-bedpe_supported, bedpe_support_count, bedpe_contact_score,
-nearest_tss_distance_bp (when available), expression_value,
-expression_status, expression_rank, candidate_priority.
+evidence_tier (0-4 ordinal evidence strength), bedpe_supported,
+bedpe_support_count, bedpe_contact_score,
+nearest_tss_distance_bp (strand-aware SIGNED distance, matching
+\code{annotation_summary}; NA when the pair has no nearest-TSS evidence),
+expression_value, expression_status, expression_rank (contiguous rank over
+the returned table), candidate_priority.
 }
 \description{
 Extracts candidate (domain-associated) genes from the stored

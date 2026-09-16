@@ -1,7 +1,7 @@
 Package: epiPortrait
 Type: Package
 Title: Replicate-Aware Epigenomic Domain Profiling
-Version: 0.99.3
+Version: 0.99.4
 Depends: R (>= 4.5.0)
 Authors@R: c(
     person(given = "Ying", family = "ZHANG", 
@@ -31,13 +31,18 @@ Description: Provides methods for replicate-aware quantitative phenotyping
     evidence is retained and aggregated with specified support
     rules, enabling condition-specific classification of Intensity-Super,
     Breadth-Super, Dual-Super, Typical, or Uncertain domain states without
-    using the consensus-domain width as the breadth caller. The package
-    further supports condition transitions, continuous domain-width
+    using the consensus-domain width as the breadth caller. An orthogonal
+    evidence layer distinguishes operational absence in the supplied native
+    peak calls from technical or peak-assignment no-calls. The package further
+    supports condition transitions, continuous domain-width
     remodeling, signal quality control, genome-aware domain annotation with a
     three-level export (per-domain summary, per-domain-gene pair, and raw
     relationship detail), optional BEDPE contact evidence, expression-aware
     candidate-gene prioritization, differential domain analysis on continuous
-    BigWig signal using limma, and result visualization.
+    BigWig signal using limma, domain-aware functional interpretation (GO ORA
+    and GSEA against a domain-derived testable universe, with explicit effect
+    sizes and comparative views across phenotypes or transitions), and result
+    visualization.
 License: GPL (>= 3) + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -68,7 +73,8 @@ Imports:
     withr
 Suggests:
     BiocStyle,
-    edgeR,
+    clusterProfiler,
+    GO.db,
     HDF5Array,
     knitr,
     org.Hs.eg.db,

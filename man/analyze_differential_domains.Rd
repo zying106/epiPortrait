@@ -17,7 +17,8 @@ analyze_differential_domains(
   logFC_cutoff = 1,
   fdr_cutoff = 0.05,
   trend = TRUE,
-  robust = FALSE
+  robust = FALSE,
+  result_name = NULL
 )
 }
 \arguments{
@@ -37,7 +38,9 @@ model, or NULL to build from \code{group_var} + \code{ref_group}/
 
 \item{contrast}{A contrast specification: NULL (uses ref/target), a length-2
 character vector of column names to subtract (coef1 - coef2), or a numeric
-matrix from \code{limma::makeContrasts}.}
+vector or a one-column numeric matrix from \code{limma::makeContrasts}.
+Multiple contrasts should be run in separate calls so each result has an
+unambiguous domain-level status and provenance record.}
 
 \item{transform}{Character. "log2" (only; v1.0). Transform applied
 to the (non-negative) signal before limma.}
@@ -60,14 +63,19 @@ automatically (with a warning) when fewer than 20 domains pass filtering.}
 \item{robust}{Logical. Passed to \code{limma::eBayes}: robust empirical-Bayes
 moderation, resistant to outlier domains (default FALSE). Consider TRUE
 when a small subset of extreme domains is expected.}
+
+\item{result_name}{Character or NULL. Optional unique label for a custom
+contrast. When NULL, a label is derived from the ref/target groups,
+contrast expression, or contrast-matrix column name. Pair-specific result
+columns and provenance use this label.}
 }
 \value{
-\code{se} with rowData columns:
-\code{<feature>_logFC}, \code{<feature>_AveExpr},
-\code{<feature>_t}, \code{<feature>_P.Value}, \code{<feature>_adj.P.Val},
-\code{<feature>_DiffStatus} (Gain / Loss / NS / NA);
-and \code{metadata(se)$differential_domains} with the limma fit summary,
-design, contrast and provenance.
+\code{se} with pair-specific rowData columns:
+\code{<feature>_Diff__<result>__logFC} and the corresponding
+\code{AveExpr}, \code{t}, \code{P.Value}, \code{adj.P.Val}, and
+\code{DiffStatus} columns. Complete provenance records are appended to
+\code{metadata(se)$differential_domain_analyses} under the same
+\code{<feature>_Diff__<result>} key.
 }
 \description{
 Performs a group-wise differential analysis of a continuous
@@ -96,7 +104,9 @@ the coordinate universe and continuous phenotype layer.
 samples (e.g. \code{~ Condition} or \code{~ 0 + Condition + batch}); contrast
 is set either via the convenience \code{ref_group}/\code{target_group} pair
 (default two-group comparison on a \code{Condition} column) or via a
-\code{contrast} matrix / \code{limma::makeContrasts}-style specification.
+one-column \code{contrast} matrix /
+\code{limma::makeContrasts}-style specification. One call represents one
+contrast; a matrix with multiple contrast columns is rejected explicitly.
 
 \strong{Transform offset caveat.} The variance-stabilizing transform is
 \code{log(x + 1)}; the pseudo-count 1 is expressed in the units of the input
@@ -118,6 +128,7 @@ if (requireNamespace("limma", quietly = TRUE)) {
   se <- analyze_differential_domains(
     example_se, group_var = "Condition",
     ref_group = "Control", target_group = "Treatment")
-  table(SummarizedExperiment::rowData(se)$Intensity_DiffStatus)
+  table(SummarizedExperiment::rowData(se)[[
+    "Intensity_Diff__Control_vs_Treatment__DiffStatus"]])
 }
 }

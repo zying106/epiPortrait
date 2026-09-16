@@ -260,7 +260,8 @@ integrate_cross_mark <- function(se_a, se_b,
 #'   \code{<prefix>_SampleTransition__<ref>_vs_<target>} (labels:
 #'   \code{Persistent_<value>}, \code{<from>_to_<to>}, \code{Uncertain},
 #'   matching \code{compare_superdomain_classes()} semantics) and
-#'   \code{metadata(se)$transitions[[key]]} entries with the counts tables.
+#'   \code{metadata(se)$transitions[["sample__<prefix>__<ref>_vs_<target>"]]}
+#'   entries with the counts tables.
 #' @importFrom stats setNames
 #' @examples
 #' data(example_se)
@@ -334,7 +335,8 @@ transition_matrix_per_sample <- function(se, feature = NULL, call_fmt = NULL,
     col <- sprintf("%s_SampleTransition__%s_vs_%s", prefix, r_tp, t_tp)
     rowData(se)[[col]] <- tr
     key <- paste0(r_tp, "_vs_", t_tp)
-    S4Vectors::metadata(se)$transitions[[key]] <- list(
+    provenance_key <- paste0("sample__", prefix, "__", key)
+    S4Vectors::metadata(se)$transitions[[provenance_key]] <- list(
       type = "per_sample_transition",
       ref = r_tp, target = t_tp,
       call_column_fmt = call_fmt,

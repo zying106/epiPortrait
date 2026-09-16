@@ -9,7 +9,8 @@ plot_differential_volcano(
   feature = "Intensity",
   logFC_col = NULL,
   padj_col = NULL,
-  label_n = 0
+  label_n = 0,
+  result_name = NULL
 )
 }
 \arguments{
@@ -18,10 +19,18 @@ plot_differential_volcano(
 \item{feature}{Character. Differential feature column (default "Intensity").}
 
 \item{logFC_col, padj_col}{Character. Column names for logFC and adjusted
-P-value (default constructed from \code{feature}).}
+P-value. By default they are resolved from the selected canonical
+differential result.}
 
 \item{label_n}{Integer. Number of top domains to label with
 \code{top_candidate_gene_symbol} / gene symbol if available (default 0).}
+
+\item{result_name}{Character or NULL. Differential result to plot. May be
+either the full metadata key (for example
+\code{"Intensity_Diff__Control_vs_Treatment"}) or its result suffix
+(\code{"Control_vs_Treatment"}). When NULL, the result is selected
+automatically only if exactly one analysis exists for \code{feature}; with
+multiple analyses, supply \code{result_name} or explicit column names.}
 }
 \value{
 A ggplot object.

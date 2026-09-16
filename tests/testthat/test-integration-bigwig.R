@@ -46,8 +46,25 @@ test_that("full pipeline runs on tiny real BigWigs", {
   expect_true(all(i >= 0))
 })
 
-test_that("Breadth-Super calling works end-to-end on real BigWigs", {
+test_that("stitch provenance is propagated into the SummarizedExperiment", {
   extdata <- system.file("extdata", package = "epiPortrait")
+  skip_if(extdata == "", "inst/extdata not found (source checkout?)")
+
+  samples <- data.frame(
+    SampleID  = c("C1", "C2", "T1", "T2"),
+    Condition = c("Control", "Control", "Treatment", "Treatment"),
+    bw_path   = file.path(extdata, c("C1.bw", "C2.bw", "T1.bw", "T2.bw"))
+  )
+  peaks <- stitch_epi_peaks(rtracklayer::import(file.path(extdata, "peaks.bed")),
+                            stitch_distance = 1000)
+  se <- build_portrait_matrix(samples, consensus_peaks = peaks, workers = 1)
+  prov <- S4Vectors::metadata(se)$stitch_provenance
+  expect_false(is.null(prov))
+  expect_equal(prov$stitch_distance_bp, 1000)
+  expect_equal(prov$n_output_domains, nrow(se))
+})
+
+test_that("Breadth-Super calling works end-to-end on real BigWigs", {  extdata <- system.file("extdata", package = "epiPortrait")
   skip_if(extdata == "", "inst/extdata not found")
 
   samples <- data.frame(

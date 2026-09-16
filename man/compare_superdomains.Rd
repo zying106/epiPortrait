@@ -45,7 +45,10 @@ stored provenance (support_rule, min_replicate_support, tie_policy,
 min_valid_replicates) so transition semantics match the group calls.}
 }
 \value{
-se with *_Transition column.
+\code{se} with a pair-specific transition column named
+\code{<feature>_Transition__<scope>__<ref>_vs_<target>}.
+Pair-specific columns are never overwritten by comparisons involving
+other groups or cutoff scopes.
 }
 \description{
 Compare Super-Domain Status Between Conditions
@@ -57,5 +60,6 @@ se <- call_super_domains(example_se, feature = "Intensity",
                          method = "tangent", log_transform = FALSE)
 se <- compare_superdomains(se, group_var = "Condition",
                            ref_group = "Control", target_group = "Treatment")
-table(SummarizedExperiment::rowData(se)$Intensity_Transition)
+table(SummarizedExperiment::rowData(se)[[
+  "Intensity_Transition__relative__Control_vs_Treatment"]])
 }

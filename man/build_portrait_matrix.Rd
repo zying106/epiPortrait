@@ -43,10 +43,14 @@ BigWig + consensus peaks combination skip BigWig I/O entirely (default: NULL).
 The cache stores raw (un-sanitized) coverage so that negative_policy and
 custom features can change between runs without cache pollution.}
 
-\item{custom_features}{A named list of functions. Each function must accept a
-single \code{NumericList} (the coverage view for one peak) and return a single
-numeric value. Results are added as additional assays alongside the core
-dimensions (e.g., \code{list(Entropy = function(x) ...)}).}
+\item{custom_features}{A named list of functions. Each function receives the
+sanitized, non-missing per-base numeric coverage vector for one domain and
+must return one finite numeric value or \code{NA_real_}. Functions are called
+only for domains with at least three non-missing coverage positions; shorter
+domains receive \code{NA_real_}. Names must be unique, syntactically valid R
+names and must not collide with built-in feature names. Results are added as
+assays alongside the core dimensions (e.g.,
+\code{list(Entropy = function(x) ...)}).}
 
 \item{negative_policy}{Character. How to handle negative signal values in the
 BigWig tracks:

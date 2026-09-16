@@ -116,7 +116,10 @@ combine_superdomain_calls <- function(se, intensity_feature = "Intensity",
 #'   inherit the FULL replicate-support configuration of the primary call from
 #'   stored provenance (support_rule, min_replicate_support, tie_policy,
 #'   min_valid_replicates) so transition semantics match the group calls.
-#' @return se with *_Transition column.
+#' @return \code{se} with a pair-specific transition column named
+#'   \code{<feature>_Transition__<scope>__<ref>_vs_<target>}.
+#'   Pair-specific columns are never overwritten by comparisons involving
+#'   other groups or cutoff scopes.
 #' @examples
 #' data(example_se)
 #' se <- call_super_domains(example_se, feature = "Intensity",
@@ -124,13 +127,15 @@ combine_superdomain_calls <- function(se, intensity_feature = "Intensity",
 #'                          method = "tangent", log_transform = FALSE)
 #' se <- compare_superdomains(se, group_var = "Condition",
 #'                            ref_group = "Control", target_group = "Treatment")
-#' table(SummarizedExperiment::rowData(se)$Intensity_Transition)
+#' table(SummarizedExperiment::rowData(se)[[
+#'   "Intensity_Transition__relative__Control_vs_Treatment"]])
 #' @export
 compare_superdomains <- function(se, group_var = "Condition",
                                   ref_group, target_group,
                                   feature = "Intensity",
                                   cutoff_scope = c("relative", "reference", "pooled")) {
   cutoff_scope <- match.arg(cutoff_scope)
+  cutoff <- NULL
   meta <- as.data.frame(colData(se))
   if (!group_var %in% colnames(meta)) stop("group_var not found in colData.")
   idx_ref <- which(meta[[group_var]] == ref_group)
@@ -143,7 +148,11 @@ compare_superdomains <- function(se, group_var = "Condition",
 
   if (cutoff_scope == "relative") {
     # ---- per-group independent cutoffs (default) ---------------------------
-    if (!rc %in% colnames(rowData(se))) stop("Run per_group mode first.")
+    missing_calls <- setdiff(c(rc, tc), colnames(rowData(se)))
+    if (length(missing_calls) > 0L) {
+      stop("Run call_super_domains(mode = 'per_group') first. Missing: ",
+           paste(missing_calls, collapse = ", "), ".", call. = FALSE)
+    }
     r_type <- rowData(se)[[rc]]
     t_type <- rowData(se)[[tc]]
   } else {
@@ -225,14 +234,15 @@ compare_superdomains <- function(se, group_var = "Condition",
   tr[r_s & !t_s] <- "Super_to_Typical"
   tr[r_na | t_na] <- "Uncertain"
 
-  # Relative transitions must not be labelled as absolute gain/loss.
-  col_name <- paste0(feature, "_Transition")
+  # Relative transitions must not be labelled as absolute gain/loss. The
+  # canonical column includes scope and pair so repeated comparisons cannot
+  # overwrite one another.
+  key <- paste0(ref_group, "_vs_", target_group)
+  col_name <- paste0(feature, "_Transition__", cutoff_scope, "__", key)
   if (cutoff_scope == "relative") {
-    col_name <- paste0(feature, "_Relative_Transition")
     tr[tr == "Typical_to_Super"] <- "Relative_Prominence_Up"
     tr[tr == "Super_to_Typical"] <- "Relative_Prominence_Down"
   } else {
-    col_name <- paste0(feature, "_Transition__", cutoff_scope)
     tr[tr == "Typical_to_Super"] <- "Gain"
     tr[tr == "Super_to_Typical"] <- "Loss"
   }
@@ -240,24 +250,32 @@ compare_superdomains <- function(se, group_var = "Condition",
 
   # For reference/pooled modes, record the inherited replicate-support
   # configuration so the transition semantics remain auditable.
-  key <- paste0(ref_group, "_vs_", target_group)
   if (is.null(S4Vectors::metadata(se)$transitions)) {
     S4Vectors::metadata(se)$transitions <- list()
   }
+  provenance_key <- paste0("feature__", feature, "__", cutoff_scope,
+                           "__", key)
   prov_t <- list(
     ref_group = ref_group,
     target_group = target_group,
     feature = feature,
+    group_var = group_var,
     cutoff_scope = cutoff_scope,
+    cutoff_value = cutoff,
+    source_call_columns = if (cutoff_scope == "relative") c(rc, tc) else NULL,
     created_columns = col_name
   )
   if (cutoff_scope != "relative") {
+    prov_t$cutoff_method <- c_method
+    prov_t$log_transform_used <- c_log
+    prov_t$min_quality <- c_minq
+    prov_t$quantile_cutoff <- c_quantile
     prov_t$support_rule <- support_rule
     prov_t$min_replicate_support <- support_fraction
     prov_t$tie_policy <- c_tie
     prov_t$min_valid_replicates <- m_valid
   }
-  S4Vectors::metadata(se)$transitions[[key]] <- prov_t
+  S4Vectors::metadata(se)$transitions[[provenance_key]] <- prov_t
   se
 }
 
@@ -274,7 +292,8 @@ compare_superdomains <- function(se, group_var = "Condition",
 #' @param se SummarizedExperiment after combine_superdomain_calls(group_var).
 #' @param ref_group Reference condition.
 #' @param target_group Treatment condition.
-#' @return se with \code{Combined_Relative_Class_Transition} column.
+#' @return \code{se} with a pair-specific column named
+#'   \code{Combined_Class_Transition__relative__<ref>_vs_<target>}.
 #' @examples
 #' data(example_se)
 #' se <- call_super_domains(example_se, feature = "Intensity",
@@ -285,7 +304,8 @@ compare_superdomains <- function(se, group_var = "Condition",
 #' se <- combine_superdomain_calls(se, group_var = "Condition")
 #' se <- compare_superdomain_classes(se, ref_group = "Control",
 #'                                   target_group = "Treatment")
-#' table(SummarizedExperiment::rowData(se)$Combined_Relative_Class_Transition)
+#' table(SummarizedExperiment::rowData(se)[[
+#'   "Combined_Class_Transition__relative__Control_vs_Treatment"]])
 #' @export
 compare_superdomain_classes <- function(se, ref_group, target_group) {
   rc <- paste0("Combined_Class__", ref_group)
@@ -307,18 +327,20 @@ compare_superdomain_classes <- function(se, ref_group, target_group) {
   # Relative architecture-state transition: combined classes come from
   # per-group independent cutoffs, so never label as absolute
   # gain/loss.
-  rowData(se)[["Combined_Relative_Class_Transition"]] <- tr
-
   key <- paste0(ref_group, "_vs_", target_group)
+  col_name <- paste0("Combined_Class_Transition__relative__", key)
+  rowData(se)[[col_name]] <- tr
+
   if (is.null(S4Vectors::metadata(se)$transitions)) {
     S4Vectors::metadata(se)$transitions <- list()
   }
-  S4Vectors::metadata(se)$transitions[[key]] <- list(
+  provenance_key <- paste0("combined__relative__", key)
+  S4Vectors::metadata(se)$transitions[[provenance_key]] <- list(
     ref_group = ref_group,
     target_group = target_group,
     type = "combined_relative_class",
     cutoff_scope = "relative",
-    created_columns = "Combined_Relative_Class_Transition"
+    created_columns = col_name
   )
   se
 }

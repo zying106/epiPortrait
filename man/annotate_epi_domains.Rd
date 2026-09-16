@@ -11,6 +11,7 @@ annotate_epi_domains(
   anno_db = NULL,
   promoter_upstream = 3000,
   promoter_downstream = 3000,
+  nearest_tss_cutoff_bp = getOption("epiPortrait.nearest_tss_cutoff_bp", 10000),
   bedpe = NULL,
   bedpe_score_col = NULL,
   min_anchor_overlap_bp = NULL,
@@ -23,8 +24,9 @@ annotate_epi_domains(
 \arguments{
 \item{se}{A SummarizedExperiment from \code{build_portrait_matrix()}.}
 
-\item{genome}{Character. Built-in shortcut ("hg38","hg19","mm10","mm9") or a
-TxDb object. For non-built-in species supply \code{txdb}.}
+\item{genome}{Character. Built-in shortcut ("hg38","hg19","mm10") or a
+TxDb object. For other genomes (e.g. mm9, rn7) supply \code{txdb}
+explicitly; core quantitative analysis is genome-agnostic.}
 
 \item{txdb}{A TxDb object or NULL (resolved from genome shortcut).}
 
@@ -35,6 +37,14 @@ TxDb object. For non-built-in species supply \code{txdb}.}
 
 \item{promoter_downstream}{Numeric. Promoter window downstream of the TSS
 (default 3000 bp).}
+
+\item{nearest_tss_cutoff_bp}{Numeric. Distance (bp) below which a
+\code{nearest_tss} relation counts as strong proximal evidence (tier 2)
+when \code{best_relation} / \code{best_tier} are computed for the dedup
+and summary tables. Must match the value used by
+\code{get_domain_genes()} (which reads the same
+\code{epiPortrait.nearest_tss_cutoff_bp} option by default) so the two
+layers cannot drift apart. Default 10000.}
 
 \item{bedpe}{Character path to a BEDPE file, a data.frame, or NULL. Only
 \code{bedpe_promoter_contact} evidence is added (3D promoter-contact);
@@ -82,14 +92,21 @@ using other ID systems such as ENSEMBL / TAIR / FlyBase).}
 }
 \value{
 \code{se} with rowData columns: primary_genomic_context,
-nearest_tss_gene_id, nearest_tss_gene_symbol, nearest_tss_distance_bp,
+nearest_tss_gene_id, nearest_tss_gene_symbol,
+nearest_tss_distance_bp (strand-aware SIGNED distance from the domain to
+the representative TSS; negative means the domain is upstream of a + gene
+or downstream of a - gene; 0 when the TSS is inside the domain),
 promoter_overlap_gene_count, gene_body_overlap_gene_count,
 fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score,
-bedpe_contact_score_max, bedpe_contact_score_mean, bedpe_contact_score_n
-(BEDPE score-summary columns are always present: values are NA for
-supported contacts without a usable score, and 0 for domains with no
-BEDPE evidence, so downstream schemas are stable), and
-top_candidate_gene_symbol; the annotation result is also exposed as a
+bedpe_contact_score_max, bedpe_contact_score_mean, bedpe_contact_score_n.
+BEDPE score-summary columns are always present:
+\code{bedpe_contact_score}/\code{_max}/\code{_mean} are NA for supported
+contacts without a usable score (including runs without
+\code{bedpe_score_col}) and 0 for domains with no BEDPE evidence;
+\code{bedpe_contact_score_n} is the number of UNIQUE supporting BEDPE
+records (0 when there is no BEDPE evidence), so it mirrors
+\code{bedpe_support_count} and stays interpretable without a score column.
+Also adds top_candidate_gene_symbol; the annotation result is exposed as a
 three-level structure in metadata:
 \itemize{
 \item \code{metadata(se)$annotation_summary} — ONE ROW PER DOMAIN master
@@ -107,7 +124,8 @@ detail (for auditing).
 \description{
 Annotates the final shared domains (not individual peaks) with
 genome-aware linear evidence plus optional BEDPE 3D-contact and RNA-seq
-expression evidence. Adds 7 compact rowData columns and stores a long-format
+expression evidence. Adds 13 compact rowData columns (7 linear/symbol
+columns plus 6 BEDPE-contact and candidate columns) and stores a long-format
 domain-gene link table in \code{metadata(se)$domain_gene_links}.
 }
 \details{

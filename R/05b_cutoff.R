@@ -209,7 +209,9 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   }
 
   if (call_status == "called") {
-    cutoff_value <- rank_df$Value[inflection_idx]
+    if (is.null(quantile_cutoff)) {
+      cutoff_value <- rank_df$Value[inflection_idx]
+    }
     inflection_idx <- min(inflection_idx, n)
     # ROSE selects super-enhancers strictly above the
     # cutoff (> cutoff). "strict" (default) follows ROSE and avoids inflating

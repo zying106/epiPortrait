@@ -37,8 +37,9 @@
 #'           consensus construction).
 #'   }
 #'   The static genomic interval length is available as \code{"IntervalWidth"}
-#'   (alias \code{"Width"}; read from rowData, constant across samples — use
-#'   only for static broadness ranking, never for per-sample calls).
+#'   (alias \code{"Width"}; read from rowData). It is ranked once as a single
+#'   static vector: replicate support is not computed, and
+#'   \code{mode = "per_group"} / \code{"per_sample"} are rejected.
 #' @param mode Character. "global_consensus" (default), "per_group", or
 #'   "per_sample". The alias "consensus" is also accepted.
 #' @param group_var Character. Column in colData for grouping
@@ -141,6 +142,19 @@
 #'   at most ONE shared domain (unique assignment by maximum overlap); peaks
 #'   not reaching the threshold are \code{Unmapped}, and tied maxima are
 #'   \code{Ambiguous}. Prevents edge-overlap double counting of Broad evidence.
+#' @param min_broad_width_bp Numeric or NULL. Only used when
+#'   \code{feature = "Breadth"}. Absolute sanity floor for the native-peak
+#'   width regime (default 500 bp). If a replicate's WIDEST eligible native
+#'   peak is narrower than this floor, the whole width distribution is in the
+#'   sharp-peak regime: no peak can meaningfully be called "broad", so the
+#'   replicate provides NO Broad evidence (\code{no_call} -> \code{Uncertain},
+#'   never a silent Typical/Broad relabel) and a warning names the affected
+#'   replicates. This is a data-domain guard, not a quality gate: it is applied
+#'   on both the data-driven inflection path and the explicit
+#'   \code{quantile_cutoff} path. Set to \code{NULL} (or 0) to disable it when
+#'   the analysis is intentionally about narrow-peak width variation, or for
+#'   toy/synthetic width distributions used in unit tests. Sharp-peak data
+#'   (e.g. TF ChIP-seq) should use \code{feature = "Intensity"} instead.
 #' @param valid_chroms Character or NULL. Only used when
 #'   \code{feature = "Breadth"}. Optional vector of allowed chromosomes for the
 #'   genome-wide eligible native peak set (e.g. \code{c("chr1", ..., "chr22")}
@@ -152,7 +166,11 @@
 #'   Call provenance (feature, method, requested/used log_transform, cutoff,
 #'   cutoff_stability_interval, bootstrap_success_rate, quality_score,
 #'   call_status, n_super) is stored in
-#'   \code{metadata(se)$superdomain_calls}.
+#'   \code{metadata(se)$superdomain_calls}. Breadth calls additionally store an
+#'   orthogonal per-domain x per-replicate evidence layer in
+#'   \code{metadata(se)$breadth_domain_evidence}. Its states are
+#'   \code{Broad}, \code{Typical}, \code{PeakAbsent}, and \code{NoCall}; it
+#'   does not alter the canonical Breadth or combined taxonomy.
 #' @import SummarizedExperiment
 #' @examples
 #' data(example_se)
@@ -175,6 +193,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                 n_bootstrap = NULL,
                                 seed = NULL,
                                 min_peak_overlap_fraction = 0.5,
+                                min_broad_width_bp = 500,
                                 valid_chroms = NULL,
                                 verbose = TRUE) {
   mode <- match.arg(mode)
@@ -244,6 +263,14 @@ call_super_domains <- function(se, feature = "Intensity",
         min_peak_overlap_fraction < 0 || min_peak_overlap_fraction > 1) {
       stop("min_peak_overlap_fraction must be a finite number in [0, 1].")
     }
+    # min_broad_width_bp: NULL or a finite non-negative bp floor.
+    if (!is.null(min_broad_width_bp) &&
+        (length(min_broad_width_bp) != 1L ||
+         !is.numeric(min_broad_width_bp) ||
+         !is.finite(min_broad_width_bp) || min_broad_width_bp < 0)) {
+      stop("min_broad_width_bp must be NULL or one finite non-negative number ",
+           "(bp).")
+    }
     # quantile_cutoff for Breadth is an explicit user opt-in: the top fraction
     # is taken from each replicate's genome-wide eligible native PeakWidth
     # distribution (same population as the inflection path), giving a bp
@@ -262,12 +289,12 @@ call_super_domains <- function(se, feature = "Intensity",
       min_replicate_support = min_replicate_support,
       min_valid_replicates = min_valid_replicates,
       min_peak_overlap_fraction = min_peak_overlap_fraction,
+      min_broad_width_bp = min_broad_width_bp,
       valid_chroms = valid_chroms, verbose = verbose))
   }
 
-  # Feature may be a per-sample assay OR a static rowData column (e.g.
-  # IntervalWidth). Resolve aliases (Width -> IntervalWidth) against
-  # either source.
+  # Feature may be a per-sample assay or a static rowData column. Resolve
+  # aliases (Width -> IntervalWidth) against either source.
   if (!feature %in% assayNames(se) && !feature %in% colnames(rowData(se))) {
     alt <- .resolve_assay(se, feature)
     if (alt != feature) feature <- alt
@@ -275,20 +302,6 @@ call_super_domains <- function(se, feature = "Intensity",
   if (!feature %in% assayNames(se) && !feature %in% colnames(rowData(se))) {
     stop("Feature not found in assays or rowData: ", feature)
   }
-  meta <- as.data.frame(colData(se))
-
-  # Feature matrix: per-sample assays, OR a static rowData column such as
-  # IntervalWidth (constant across samples).
-  if (feature %in% assayNames(se)) {
-    mat <- assay(se, feature)
-  } else if (feature %in% colnames(rowData(se))) {
-    v <- as.numeric(rowData(se)[[feature]])
-    mat <- matrix(rep(v, ncol(se)), ncol = ncol(se))
-    colnames(mat) <- colnames(se)
-  } else {
-    stop(sprintf("Feature '%s' not found in assays or rowData.", feature))
-  }
-
   .run_call <- function(val_vector) {
     .call_super_domains_on_vector(val_vector, feature, quantile_cutoff,
                                    log_transform = log_transform, verbose = verbose,
@@ -296,6 +309,78 @@ call_super_domains <- function(se, feature = "Intensity",
                                    method = method, min_quality = min_quality,
                                    tie_policy = tie_policy)
   }
+
+  # A rowData feature has one value per shared genomic interval, not one
+  # independently observed value per sample. Rank it exactly once. Repeating
+  # that vector across samples would manufacture replicate agreement and make
+  # per-group/per-sample output biologically meaningless.
+  if (feature %in% colnames(rowData(se)) && !feature %in% assayNames(se)) {
+    if (mode != "global_consensus") {
+      stop("Static rowData feature '", feature,
+           "' cannot be called with mode = '", mode,
+           "'. Use the default global_consensus mode for one static ranking, ",
+           "or use a per-sample assay feature for replicate-aware calls.")
+    }
+    static_values <- rowData(se)[[feature]]
+    if (!is.numeric(static_values)) {
+      stop("Static rowData feature '", feature, "' must be numeric.")
+    }
+    static_call <- .run_call(stats::setNames(as.numeric(static_values),
+                                              rownames(se)))
+    rowData(se)[[paste0(feature, "_Domain_Type")]] <-
+      static_call$Domain_Type
+    rowData(se)[[paste0(feature, "_Rank")]] <- static_call$Rank
+    rowData(se)[[paste0(feature, "_Value")]] <- static_call$Value_Used
+
+    if (is.null(S4Vectors::metadata(se)$superdomain_calls)) {
+      S4Vectors::metadata(se)$superdomain_calls <- list()
+    }
+    S4Vectors::metadata(se)$superdomain_calls[[feature]] <- list(
+      feature = feature,
+      feature_source = "rowData",
+      static_feature = TRUE,
+      mode = "static",
+      requested_mode = mode,
+      group_var = NULL,
+      method = method,
+      log_transform_requested = log_transform,
+      log_transform_used = static_call$effective_log_transform,
+      quantile_cutoff = quantile_cutoff,
+      cutoff = static_call$cutoff_value,
+      cutoff_stability_interval = static_call$cutoff_stability_interval,
+      bootstrap_success_rate = static_call$bootstrap_success_rate,
+      quality_score = static_call$quality_score,
+      call_status = static_call$call_status,
+      inflection_method = static_call$inflection_method,
+      n_total = static_call$n_total,
+      n_super = static_call$n_super,
+      min_replicate_support = NULL,
+      support_rule = NULL,
+      min_valid_replicates = NULL,
+      min_quality = min_quality,
+      tie_policy = tie_policy,
+      seed = seed,
+      note = paste(
+        "Static rowData feature: ranked once over the shared domain universe;",
+        "no sample replication or replicate-support aggregation was applied."),
+      groups = NULL,
+      replicates = NULL,
+      decision_chain = "single static rowData vector -> rank -> cutoff",
+      per_sample_evidence = NULL,
+      group_support = NULL,
+      group_type = NULL,
+      display_rank = NULL
+    )
+    if (verbose) {
+      message(sprintf("Static %s ranking: %d super among %d domains.",
+                      feature, static_call$n_super, nrow(se)))
+    }
+    return(se)
+  }
+
+  # All remaining features are genuine domain x sample assays.
+  mat <- assay(se, feature)
+  meta <- as.data.frame(colData(se))
 
   if (mode == "global_consensus") {
     # ---- Global (persistent) consensus across condition groups --------------
@@ -566,7 +651,9 @@ call_super_domains <- function(se, feature = "Intensity",
 #   3. native peaks are mapped to the shared domains by UNIQUE assignment (max
 #      overlap + min_peak_overlap_fraction), so a broad peak cannot double-count
 #      into neighbouring domains;
-#   4. per-replicate domain broad evidence is aggregated across replicates
+#   4. an orthogonal Broad / Typical / PeakAbsent / NoCall evidence layer is
+#      recorded without changing the canonical Breadth calls;
+#   5. per-replicate domain broad evidence is aggregated across replicates
 #      (support rule) to produce the group-level / global Breadth-Super.
 .call_breadth_super_domains <- function(se, mode, group_var, method,
                                         quantile_cutoff, min_quality,
@@ -574,6 +661,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                         support_rule, min_replicate_support,
                                         min_valid_replicates,
                                         min_peak_overlap_fraction,
+                                        min_broad_width_bp = 500,
                                         valid_chroms, verbose) {
   # ---- 0. native peaks must be available -------------------------------
   np <- S4Vectors::metadata(se)$native_peaks
@@ -609,6 +697,7 @@ call_super_domains <- function(se, feature = "Intensity",
   names(rep_broad) <- colnames(se)
   rep_call_valid <- stats::setNames(rep(FALSE, ncol(se)), colnames(se))
   prov_replicates <- list()
+  n_sharp <- 0L
   for (s in colnames(se)) {
     peaks <- np[[s]]
     if (is.null(peaks) || length(peaks) == 0) {
@@ -616,7 +705,8 @@ call_super_domains <- function(se, feature = "Intensity",
       rep_broad[[s]] <- rep(NA, 0L)
       prov_replicates[[s]] <- list(
         replicate = s, n_eligible = 0L, call_status = "no_call",
-        reason = "no native peaks")
+        reason = "no native peaks",
+        domain_evidence_reason_code = "no_native_peaks")
       next
     }
     eligible <- .eligible_native_peaks(peaks, valid_chroms)
@@ -631,7 +721,8 @@ call_super_domains <- function(se, feature = "Intensity",
       rep_call_valid[s] <- FALSE
       prov_replicates[[s]] <- list(
         replicate = s, n_eligible = 0L, call_status = "no_call",
-        reason = "no eligible native peaks after filtering")
+        reason = "no eligible native peaks after filtering",
+        domain_evidence_reason_code = "no_eligible_native_peaks")
       next
     }
     if (!is.null(quantile_cutoff)) {
@@ -654,7 +745,8 @@ call_super_domains <- function(se, feature = "Intensity",
         prov_replicates[[s]] <- list(
           replicate = s, n_eligible = length(eligible),
           cutoff = NA_real_, quality_score = inflect$quality_score,
-          call_status = inflect$call_status, reason = inflect$reason)
+          call_status = inflect$call_status, reason = inflect$reason,
+          domain_evidence_reason_code = "inflection_no_call")
         if (verbose) {
           message(sprintf("  [Breadth] %s: no reliable inflection -> no evidence (Uncertain)",
                           s))
@@ -664,6 +756,37 @@ call_super_domains <- function(se, feature = "Intensity",
       cutoff_value <- inflect$cutoff_value
       method_label <- inflect$method
       quality_score <- inflect$quality_score
+    }
+
+    # ---- sharp-peak regime guard -------------------------------------------
+    # If the WIDEST eligible native peak of this replicate is still narrower
+    # than min_broad_width_bp, no peak can meaningfully be called "broad": an
+    # elbow on a narrow width distribution (e.g. 150-250 bp peaks) can still be
+    # "called" with acceptable quality and would produce confident but
+    # biologically meaningless Breadth-Super labels. The replicate therefore
+    # provides NO Broad evidence (-> Uncertain, never Typical). Applies to both
+    # the inflection and the explicit quantile path; disable with
+    # min_broad_width_bp = NULL when narrow-peak width variation is itself the
+    # object of study.
+    if (!is.null(min_broad_width_bp) && is.finite(max(w)) &&
+        max(w) < min_broad_width_bp) {
+      rep_broad[[s]] <- rep(NA, length(eligible))
+      rep_call_valid[s] <- FALSE
+      prov_replicates[[s]] <- list(
+        replicate = s, n_eligible = length(eligible),
+        cutoff = cutoff_value, quality_score = quality_score,
+        call_status = "no_call", sharp_peak_regime = TRUE,
+        domain_evidence_reason_code = "sharp_peak_regime",
+        reason = sprintf(
+          "sharp-peak regime: widest eligible native peak %.0f bp < min_broad_width_bp %.0f bp; no Broad evidence",
+          max(w), min_broad_width_bp))
+      n_sharp <- n_sharp + 1L
+      if (verbose) {
+        message(sprintf(
+          "  [Breadth] %s: sharp-peak width regime (widest peak %.0f bp < %.0f bp) -> no Broad evidence (Uncertain)",
+          s, max(w), min_broad_width_bp))
+      }
+      next
     }
     rep_call_valid[s] <- TRUE
     if (tie_policy == "strict") {
@@ -721,6 +844,7 @@ call_super_domains <- function(se, feature = "Intensity",
       quality_score = quality_score,
       call_status = "called",
       n_broad = sum(is_broad),
+      domain_evidence_reason_code = NA_character_,
       inflection_method = method_label)
     if (verbose) {
       message(sprintf("  [Breadth] %s: %d broad / %d eligible (cutoff %s %.0f bp)",
@@ -745,82 +869,132 @@ call_super_domains <- function(se, feature = "Intensity",
     peak_tables[[s]] <- tab
   }
 
+  # Surface the sharp-peak guard once per call: a user analysing sharp-peak
+  # data with feature = "Breadth" should learn why everything became Uncertain
+  # (and that Intensity is the appropriate axis), rather than assuming the
+  # data were clean but uninformative.
+  if (n_sharp > 0L && !is.null(min_broad_width_bp)) {
+    regime <- sprintf(
+      "%d replicate(s) were in a sharp-peak native-width regime (widest eligible peak < min_broad_width_bp = %.0f bp). ",
+      n_sharp, min_broad_width_bp)
+    warning(regime,
+            "Breadth evidence was withheld for those replicates (Uncertain). ",
+            "Use feature = 'Intensity' for sharp-peak data, or set ",
+            "min_broad_width_bp = NULL to analyze narrow-peak width variation ",
+            "explicitly.", call. = FALSE)
+  }
+
   # ---- 2. unique peak -> domain mapping ------------------------------------
   # A native peak is assigned to at most ONE shared domain: the overlapping
   # domain with the maximum overlap bp, provided the peak-overlap fraction
   # >= min_peak_overlap_fraction. Unmapped / Ambiguous peaks NEVER provide
-  # broad or typical evidence: only successfully uniquely mapped peaks
-  # contribute, so an edge-overlap Unmapped peak cannot silently turn a domain
-  # into Typical.
+  # broad or typical evidence. The orthogonal evidence layer distinguishes:
+  #   Broad / Typical  = at least one uniquely mapped peak;
+  #   PeakAbsent       = valid replicate, no eligible peak overlaps the domain;
+  #   NoCall           = invalid replicate, or overlap exists without a unique
+  #                      assignment that passes the mapping threshold.
+  # "PeakAbsent" is an operational peak-caller state, not proof that the
+  # biological chromatin domain is absent.
   domain_evidence <- matrix(NA_character_, nrow = nrow(se), ncol = ncol(se),
                             dimnames = list(rownames(se), colnames(se)))
+  breadth_evidence <- matrix("NoCall", nrow = nrow(se), ncol = ncol(se),
+                             dimnames = list(rownames(se), colnames(se)))
+  breadth_reason <- matrix("replicate_no_call", nrow = nrow(se),
+                           ncol = ncol(se),
+                           dimnames = list(rownames(se), colnames(se)))
   mapping_prov <- list()
   for (s in colnames(se)) {
     peaks <- np[[s]]
     if (!isTRUE(rep_call_valid[s])) {
       # no native peaks, or no reliable elbow -> no evidence -> Uncertain
       domain_evidence[, s] <- NA_character_
+      reason_code <- prov_replicates[[s]]$domain_evidence_reason_code
+      if (is.null(reason_code) || is.na(reason_code)) {
+        reason_code <- "replicate_no_call"
+      }
+      breadth_reason[, s] <- reason_code
       next
     }
     eligible <- .eligible_native_peaks(peaks, valid_chroms)
     w <- GenomicRanges::width(eligible)
     is_broad <- rep_broad[[s]]
 
-    # All overlapping domain x peak pairs (any overlap for geometry).
-    hits <- GenomicRanges::findOverlaps(domains, eligible)
-    if (length(hits) == 0) {
-      domain_evidence[, s] <- NA_character_
-      next
-    }
-    qh <- S4Vectors::queryHits(hits)
-    sh <- S4Vectors::subjectHits(hits)
-    ov <- GenomicRanges::pintersect(
-      domains[qh], eligible[sh], ignore.strand = TRUE)
-    ov_bp <- GenomicRanges::width(ov)
-    peak_frac <- ov_bp / pmax(w[sh], 1)
-    domain_frac <- ov_bp / pmax(GenomicRanges::width(domains)[qh], 1)
-
-    # For each peak, the unique best domain (max overlap bp); ties -> Ambiguous.
+    # All overlapping domain x peak pairs (any overlap for geometry). Mapping
+    # vectors are initialized even when there are no hits so that the peak-level
+    # provenance remains complete and every domain can be labelled PeakAbsent.
+    hits <- GenomicRanges::findOverlaps(
+      domains, eligible, ignore.strand = TRUE)
     status <- rep("Unmapped", length(eligible))
     assign_domain <- rep(NA_integer_, length(eligible))
     best_ov_bp <- rep(NA_real_, length(eligible))
     best_peak_frac <- rep(NA_real_, length(eligible))
     best_domain_frac <- rep(NA_real_, length(eligible))
-    for (pk in unique(sh)) {
-      hits_pk <- which(sh == pk)
-      best <- which.max(ov_bp[hits_pk])
-      if (length(hits_pk) > 1) {
-        # ties for the max overlap -> ambiguous (never double count)
-        ties <- which(ov_bp[hits_pk] == ov_bp[hits_pk][best])
-        if (length(ties) > 1) {
-          status[pk] <- "Ambiguous"
-          next
+    qh <- integer(0)
+    sh <- integer(0)
+    if (length(hits) > 0L) {
+      qh <- S4Vectors::queryHits(hits)
+      sh <- S4Vectors::subjectHits(hits)
+      ov <- GenomicRanges::pintersect(
+        domains[qh], eligible[sh], ignore.strand = TRUE)
+      ov_bp <- GenomicRanges::width(ov)
+      peak_frac <- ov_bp / pmax(w[sh], 1)
+      domain_frac <- ov_bp / pmax(GenomicRanges::width(domains)[qh], 1)
+
+      # For each peak, the unique best domain (max overlap bp); ties are
+      # Ambiguous and never double-counted.
+      for (pk in unique(sh)) {
+        hits_pk <- which(sh == pk)
+        best <- which.max(ov_bp[hits_pk])
+        if (length(hits_pk) > 1) {
+          ties <- which(ov_bp[hits_pk] == ov_bp[hits_pk][best])
+          if (length(ties) > 1) {
+            status[pk] <- "Ambiguous"
+            next
+          }
         }
-      }
-      d_best <- qh[hits_pk][best]
-      if (peak_frac[hits_pk][best] >= min_peak_overlap_fraction) {
-        status[pk] <- "Unique"
-        assign_domain[pk] <- d_best
-        best_ov_bp[pk] <- ov_bp[hits_pk][best]
-        best_peak_frac[pk] <- peak_frac[hits_pk][best]
-        best_domain_frac[pk] <- domain_frac[hits_pk][best]
+        d_best <- qh[hits_pk][best]
+        if (peak_frac[hits_pk][best] >= min_peak_overlap_fraction) {
+          status[pk] <- "Unique"
+          assign_domain[pk] <- d_best
+          best_ov_bp[pk] <- ov_bp[hits_pk][best]
+          best_peak_frac[pk] <- peak_frac[hits_pk][best]
+          best_domain_frac[pk] <- domain_frac[hits_pk][best]
+        }
       }
     }
 
-    # Domain-level evidence for this replicate. ONLY uniquely-mapped peaks
-    # contribute: broad peaks set Super, and typical evidence comes only from
-    # uniquely mapped non-broad peaks. Unmapped or ambiguous peaks never
-    # create evidence.
-    ev <- rep(NA_character_, nrow(se))
+    # Orthogonal evidence first; then translate Broad / Typical back into the
+    # unchanged canonical Breadth call matrix. A domain touched only by peaks
+    # that could not be assigned uniquely is NoCall, not PeakAbsent.
+    ev <- rep("NoCall", nrow(se))
+    ev_reason <- rep("overlap_without_unique_assignment", nrow(se))
+    no_overlap <- setdiff(seq_len(nrow(se)), unique(qh))
+    ev[no_overlap] <- "PeakAbsent"
+    ev_reason[no_overlap] <- "no_eligible_peak_overlap"
     mapped_idx <- which(!is.na(assign_domain))
     for (pk in mapped_idx[is_broad[mapped_idx]]) {
-      ev[assign_domain[pk]] <- super_label
+      d <- assign_domain[pk]
+      ev[d] <- "Broad"
+      ev_reason[d] <- "unique_broad_peak"
     }
     for (pk in mapped_idx[!is_broad[mapped_idx]]) {
       d <- assign_domain[pk]
-      if (is.na(ev[d])) ev[d] <- typ_label   # broad evidence wins over typical
+      if (ev[d] != "Broad") {
+        ev[d] <- "Typical"
+        ev_reason[d] <- "unique_typical_peak"
+      }
     }
-    domain_evidence[, s] <- ev
+    breadth_evidence[, s] <- ev
+    breadth_reason[, s] <- ev_reason
+    core_ev <- rep(NA_character_, nrow(se))
+    core_ev[ev == "Broad"] <- super_label
+    core_ev[ev == "Typical"] <- typ_label
+    domain_evidence[, s] <- core_ev
+
+    prov_replicates[[s]]$n_domain_broad <- sum(ev == "Broad")
+    prov_replicates[[s]]$n_domain_typical <- sum(ev == "Typical")
+    prov_replicates[[s]]$n_domain_peak_absent <- sum(ev == "PeakAbsent")
+    prov_replicates[[s]]$n_domain_no_call <- sum(ev == "NoCall")
 
     mapping_prov[[s]] <- data.frame(
       NativePeakID = paste(s, seq_along(eligible), sep = "."),
@@ -838,6 +1012,7 @@ call_super_domains <- function(se, feature = "Intensity",
   }
 
   # ---- 3. replicate-aware aggregation ---------------------------------------
+  presence_group_prov <- list()
   if (mode == "global_consensus") {
     has_group <- group_var %in% colnames(meta)
     groups <- if (has_group) unique(meta[[group_var]]) else "ALL"
@@ -851,10 +1026,26 @@ call_super_domains <- function(se, feature = "Intensity",
                                        feature, support_rule = support_rule,
                                        min_replicate_support = min_replicate_support,
                                        min_valid_replicates = min_valid_replicates)
+      p_res <- .aggregate_breadth_presence(
+        breadth_evidence[, idx, drop = FALSE], support_rule,
+        min_replicate_support, min_valid_replicates)
       group_type_mat[, g] <- g_res$group_type
       support_vec <- ifelse(is.na(support_vec), g_res$support,
                             pmin(support_vec, g_res$support, na.rm = TRUE))
       n_valid_vec <- n_valid_vec + g_res$n_valid
+      g_name <- as.character(g)
+      rowData(se)[[paste0("Breadth_PresenceStatus__", g_name)]] <-
+        p_res$status
+      rowData(se)[[paste0("Breadth_PresenceFraction__", g_name)]] <-
+        p_res$presence_fraction
+      rowData(se)[[paste0("Breadth_AbsenceFraction__", g_name)]] <-
+        p_res$absence_fraction
+      rowData(se)[[paste0("Breadth_N_Assessable__", g_name)]] <-
+        p_res$n_assessable
+      presence_group_prov[[g_name]] <- list(
+        n_replicates = p_res$n_replicates,
+        required_replicates = p_res$required_replicates,
+        min_assessable_replicates = p_res$min_assessable_replicates)
     }
     any_uncertain <- apply(group_type_mat, 1, function(r) any(is.na(r)))
     all_super <- apply(group_type_mat, 1, function(r) all(!is.na(r) & r == super_label))
@@ -878,10 +1069,26 @@ call_super_domains <- function(se, feature = "Intensity",
                                        feature, support_rule = support_rule,
                                        min_replicate_support = min_replicate_support,
                                        min_valid_replicates = min_valid_replicates)
+      p_res <- .aggregate_breadth_presence(
+        breadth_evidence[, idx, drop = FALSE], support_rule,
+        min_replicate_support, min_valid_replicates)
       rowData(se)[[paste0("Breadth_Call__", g)]] <- g_res$group_type
       rowData(se)[[paste0("Breadth_Support__", g)]] <- g_res$support
       rowData(se)[[paste0("Breadth_N_Broad_Replicates__", g)]] <-
         rowSums(domain_evidence[, idx, drop = FALSE] == super_label, na.rm = TRUE)
+      g_name <- as.character(g)
+      rowData(se)[[paste0("Breadth_PresenceStatus__", g_name)]] <-
+        p_res$status
+      rowData(se)[[paste0("Breadth_PresenceFraction__", g_name)]] <-
+        p_res$presence_fraction
+      rowData(se)[[paste0("Breadth_AbsenceFraction__", g_name)]] <-
+        p_res$absence_fraction
+      rowData(se)[[paste0("Breadth_N_Assessable__", g_name)]] <-
+        p_res$n_assessable
+      presence_group_prov[[g_name]] <- list(
+        n_replicates = p_res$n_replicates,
+        required_replicates = p_res$required_replicates,
+        min_assessable_replicates = p_res$min_assessable_replicates)
       # expose the domain x replicate Broad evidence matrix for
       # get_replicate_calls() (Breadth replicate audit trail must
       # be symmetric with Intensity.
@@ -906,6 +1113,8 @@ call_super_domains <- function(se, feature = "Intensity",
   } else { # per_sample
     for (s in colnames(se)) {
       rowData(se)[[paste0("Breadth_Call__", s)]] <- domain_evidence[, s]
+      rowData(se)[[paste0("Breadth_Evidence__", s)]] <-
+        breadth_evidence[, s]
     }
   }
 
@@ -926,14 +1135,36 @@ call_super_domains <- function(se, feature = "Intensity",
     n_bootstrap = n_bootstrap,
     seed = seed,
     min_peak_overlap_fraction = min_peak_overlap_fraction,
+    min_broad_width_bp = min_broad_width_bp,
+    n_sharp_peak_replicates = n_sharp,
     valid_chroms = valid_chroms,
     replicates = prov_replicates,
     groups = if (exists("breadth_group_prov", inherits = FALSE)) breadth_group_prov else NULL,
+    presence_groups = presence_group_prov,
+    evidence_levels = c("Broad", "Typical", "PeakAbsent", "NoCall"),
+    peak_absent_definition = paste(
+      "The replicate-level peak-width call was valid, but no eligible native",
+      "peak overlapped the shared domain. This is operational peak-call",
+      "absence, not proof of biological domain disappearance."),
     n_total = nrow(se),
     final_n_super = if (mode == "global_consensus") {
       sum(consensus_type == super_label, na.rm = TRUE)
     } else NULL,
     calling_paradigm = "peak-level native PeakWidth, unique mapping, replicate aggregation")
+  S4Vectors::metadata(se)$breadth_domain_evidence <- list(
+    evidence = breadth_evidence,
+    reason = breadth_reason,
+    levels = c("Broad", "Typical", "PeakAbsent", "NoCall"),
+    group_var = if (mode %in% c("per_group", "global_consensus")) {
+      group_var
+    } else NULL,
+    support_rule = support_rule,
+    min_replicate_support = min_replicate_support,
+    min_valid_replicates = min_valid_replicates,
+    definition = paste(
+      "Orthogonal peak-presence evidence. PeakAbsent means no eligible native",
+      "peak overlaps the domain in an otherwise callable replicate; NoCall",
+      "means the replicate or peak-to-domain assignment was not assessable."))
   if (length(peak_tables) > 0) {
     S4Vectors::metadata(se)$breadth_peak_calls <- do.call(rbind, peak_tables)
     S4Vectors::metadata(se)$breadth_peak_mapping <- do.call(rbind, mapping_prov)
@@ -954,4 +1185,65 @@ call_super_domains <- function(se, feature = "Intensity",
     ok <- ok & as.character(GenomicRanges::seqnames(peaks)) %in% valid_chroms
   }
   peaks[ok]
+}
+
+
+# Aggregate the orthogonal Breadth evidence across replicates. Fractions use
+# ALL replicates as the denominator, so NoCall cannot inflate presence or
+# absence. The support rule defines the required number of concordant
+# replicates; min_valid_replicates defines how many assessable (non-NoCall)
+# replicates are needed before a group-level state is reported.
+.aggregate_breadth_presence <- function(evidence_mat,
+                                        support_rule = c("majority", "all",
+                                                         "fraction"),
+                                        min_replicate_support = 0.5,
+                                        min_valid_replicates = NULL) {
+  support_rule <- match.arg(support_rule)
+  if (is.null(dim(evidence_mat)) || ncol(evidence_mat) < 1L) {
+    stop("evidence_mat must be a matrix with at least one replicate column.")
+  }
+  allowed <- c("Broad", "Typical", "PeakAbsent", "NoCall")
+  observed <- unique(as.character(evidence_mat))
+  if (!all(observed %in% allowed)) {
+    stop("evidence_mat contains an unsupported Breadth evidence state.")
+  }
+  n_reps <- ncol(evidence_mat)
+  required <- switch(support_rule,
+    majority = floor(n_reps / 2) + 1L,
+    all = n_reps,
+    fraction = ceiling(min_replicate_support * n_reps))
+  min_assessable <- if (is.null(min_valid_replicates)) {
+    required
+  } else {
+    as.integer(min_valid_replicates)
+  }
+
+  is_present <- evidence_mat %in% c("Broad", "Typical")
+  dim(is_present) <- dim(evidence_mat)
+  is_absent <- evidence_mat == "PeakAbsent"
+  n_present <- rowSums(is_present)
+  n_absent <- rowSums(is_absent)
+  n_assessable <- n_present + n_absent
+  enough <- n_assessable >= min_assessable
+  present_pass <- n_present >= required
+  absent_pass <- n_absent >= required
+
+  status <- rep("NoCall", nrow(evidence_mat))
+  status[enough & present_pass & !absent_pass] <- "Present"
+  status[enough & absent_pass & !present_pass] <- "PeakAbsent"
+  status[enough & present_pass & absent_pass] <- "Mixed"
+  status[enough & !present_pass & !absent_pass &
+           n_present > 0L & n_absent > 0L] <- "Mixed"
+
+  list(
+    status = status,
+    presence_fraction = n_present / n_reps,
+    absence_fraction = n_absent / n_reps,
+    n_present = n_present,
+    n_absent = n_absent,
+    n_assessable = n_assessable,
+    n_replicates = n_reps,
+    required_replicates = required,
+    min_assessable_replicates = min_assessable
+  )
 }

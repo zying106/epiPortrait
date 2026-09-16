@@ -26,7 +26,9 @@
 #' samples (e.g. \code{~ Condition} or \code{~ 0 + Condition + batch}); contrast
 #' is set either via the convenience \code{ref_group}/\code{target_group} pair
 #' (default two-group comparison on a \code{Condition} column) or via a
-#' \code{contrast} matrix / \code{limma::makeContrasts}-style specification.
+#' one-column \code{contrast} matrix /
+#' \code{limma::makeContrasts}-style specification. One call represents one
+#' contrast; a matrix with multiple contrast columns is rejected explicitly.
 #'
 #' \strong{Transform offset caveat.} The variance-stabilizing transform is
 #' \code{log(x + 1)}; the pseudo-count 1 is expressed in the units of the input
@@ -53,7 +55,13 @@
 #'   \code{target_group}. If supplied, \code{contrast} must also be supplied.
 #' @param contrast A contrast specification: NULL (uses ref/target), a length-2
 #'   character vector of column names to subtract (coef1 - coef2), or a numeric
-#'   matrix from \code{limma::makeContrasts}.
+#'   vector or a one-column numeric matrix from \code{limma::makeContrasts}.
+#'   Multiple contrasts should be run in separate calls so each result has an
+#'   unambiguous domain-level status and provenance record.
+#' @param result_name Character or NULL. Optional unique label for a custom
+#'   contrast. When NULL, a label is derived from the ref/target groups,
+#'   contrast expression, or contrast-matrix column name. Pair-specific result
+#'   columns and provenance use this label.
 #' @param transform Character. "log2" (only; v1.0). Transform applied
 #'   to the (non-negative) signal before limma.
 #' @param min_signal Numeric. Filter: domains whose mean transformed signal is
@@ -70,12 +78,12 @@
 #' @param robust Logical. Passed to \code{limma::eBayes}: robust empirical-Bayes
 #'   moderation, resistant to outlier domains (default FALSE). Consider TRUE
 #'   when a small subset of extreme domains is expected.
-#' @return \code{se} with rowData columns:
-#'   \code{<feature>_logFC}, \code{<feature>_AveExpr},
-#'   \code{<feature>_t}, \code{<feature>_P.Value}, \code{<feature>_adj.P.Val},
-#'   \code{<feature>_DiffStatus} (Gain / Loss / NS / NA);
-#'   and \code{metadata(se)$differential_domains} with the limma fit summary,
-#'   design, contrast and provenance.
+#' @return \code{se} with pair-specific rowData columns:
+#'   \code{<feature>_Diff__<result>__logFC} and the corresponding
+#'   \code{AveExpr}, \code{t}, \code{P.Value}, \code{adj.P.Val}, and
+#'   \code{DiffStatus} columns. Complete provenance records are appended to
+#'   \code{metadata(se)$differential_domain_analyses} under the same
+#'   \code{<feature>_Diff__<result>} key.
 #' @import SummarizedExperiment
 #' @importFrom stats model.matrix
 #' @examples
@@ -84,7 +92,8 @@
 #'   se <- analyze_differential_domains(
 #'     example_se, group_var = "Condition",
 #'     ref_group = "Control", target_group = "Treatment")
-#'   table(SummarizedExperiment::rowData(se)$Intensity_DiffStatus)
+#'   table(SummarizedExperiment::rowData(se)[[
+#'     "Intensity_Diff__Control_vs_Treatment__DiffStatus"]])
 #' }
 #' @export
 analyze_differential_domains <- function(se,
@@ -99,7 +108,8 @@ analyze_differential_domains <- function(se,
                                          logFC_cutoff = 1,
                                          fdr_cutoff = 0.05,
                                          trend = TRUE,
-                                         robust = FALSE) {
+                                         robust = FALSE,
+                                         result_name = NULL) {
   if (!requireNamespace("limma", quietly = TRUE)) {
     stop("analyze_differential_domains() requires the 'limma' package. ",
          "Install it before using this function.", call. = FALSE)
@@ -111,6 +121,12 @@ analyze_differential_domains <- function(se,
   if (!is.logical(robust) || length(robust) != 1L || is.na(robust)) {
     stop("robust must be TRUE or FALSE.", call. = FALSE)
   }
+  if (!is.null(result_name) &&
+      (!is.character(result_name) || length(result_name) != 1L ||
+       is.na(result_name) || !nzchar(result_name))) {
+    stop("result_name must be NULL or one non-empty character string.",
+         call. = FALSE)
+  }
   if (!feature %in% assayNames(se)) {
     stop("feature '", feature, "' not found in assays(se).", call. = FALSE)
   }
@@ -118,6 +134,7 @@ analyze_differential_domains <- function(se,
     stop("Differential analysis requires at least 2 samples.", call. = FALSE)
   }
   meta <- as.data.frame(colData(se))
+  sample_idx <- seq_len(ncol(se))
 
   # ---- design / contrast resolution -----------------------------------------
   design_used <- design
@@ -131,8 +148,8 @@ analyze_differential_domains <- function(se,
            "comparison on group_var).", call. = FALSE)
     }
     idx <- meta[[group_var]] %in% c(ref_group, target_group)
-    se  <- se[, idx]
-    meta <- as.data.frame(colData(se))
+    sample_idx <- which(idx)
+    meta <- meta[sample_idx, , drop = FALSE]
     # Drop unused factor levels after selecting the requested comparison.
     # Otherwise a legitimate factor with levels A/B/C, subset to A/B, retains
     # C=0 and is falsely rejected by the replicate-count check below.
@@ -181,7 +198,10 @@ analyze_differential_domains <- function(se,
   # signal must NOT be silently clipped to 0 (would contradict
   # negative_policy = "allow" from build_portrait_matrix). EpigenDomain-level
   # differential analysis requires non-negative, non-missing intensity.
-  M <- assay(se, feature)
+  # Fit only the samples selected by the convenience pair, while retaining the
+  # complete input object in the return value. This permits sequential
+  # pairwise analyses on a study with more than two groups.
+  M <- assay(se, feature)[, sample_idx, drop = FALSE]
   if (any(M < 0, na.rm = TRUE)) {
     stop("Differential analysis requires a non-negative assay, but '",
          feature, "' contains negative value(s). Re-run build_portrait_matrix() ",
@@ -189,7 +209,7 @@ analyze_differential_domains <- function(se,
          "non-negative assay.", call. = FALSE)
   }
   m0 <- M
-  # Use one log2 scale so <feature>_logFC, logFC_cutoff and the volcano x-axis
+  # Use one log2 scale so the result logFC, logFC_cutoff and volcano x-axis
   # remain semantically consistent.
   Mt <- log2(m0 + 1)
   # rows with NA signal are excluded from the fit (documented as untested);
@@ -225,12 +245,22 @@ analyze_differential_domains <- function(se,
     w[[contrast_used[[2]]]] <- -1
     contrast_used <- w
   }
+  if (is.matrix(contrast_used) && ncol(contrast_used) != 1L) {
+    stop("Exactly one contrast is supported per call; received ",
+         ncol(contrast_used), ". Run analyze_differential_domains() once per ",
+         "contrast and optionally set result_name.", call. = FALSE)
+  }
   # Remaining forms: single expression string, or numeric weights / matrix.
   fit2 <- if (is.character(contrast_used)) {
     limma::contrasts.fit(fit, limma::makeContrasts(contrasts = contrast_used,
                                                    levels = design_used))
   } else {
     limma::contrasts.fit(fit, contrast_used)
+  }
+  if (ncol(fit2$coefficients) != 1L) {
+    stop("Exactly one contrast is supported per call; received ",
+         ncol(fit2$coefficients), ". Run analyze_differential_domains() ",
+         "once per contrast and optionally set result_name.", call. = FALSE)
   }
   # Mean-variance trend needs a reasonable number of tested domains.
   min_trend_rows <- 20L
@@ -265,12 +295,39 @@ analyze_differential_domains <- function(se,
   status[ok & out$logFC > logFC_cutoff & out$adj.P.Val < fdr_cutoff] <- "Gain"
   status[ok & out$logFC < -logFC_cutoff & out$adj.P.Val < fdr_cutoff] <- "Loss"
 
-  pfx <- feature
-  for (cc in colnames(out)) rowData(se)[[paste0(pfx, "_", cc)]] <- out[[cc]]
-  rowData(se)[[paste0(pfx, "_DiffStatus")]] <- status
+  # Build a stable, filesystem-friendly label for this one contrast. A unique
+  # suffix is added when the same label is run again so no earlier result or
+  # provenance record is lost.
+  inferred_name <- if (!is.null(result_name)) {
+    result_name
+  } else if (is.null(design)) {
+    paste0(ref_group, "_vs_", target_group)
+  } else if (is.character(contrast)) {
+    paste(contrast, collapse = "_minus_")
+  } else if (is.matrix(contrast) && !is.null(colnames(contrast)) &&
+             nzchar(colnames(contrast)[1])) {
+    colnames(contrast)[1]
+  } else {
+    "contrast"
+  }
+  inferred_name <- gsub("[^[:alnum:]_.-]+", "_", inferred_name)
+  base_key <- paste0(feature, "_Diff__", inferred_name)
+  analyses <- S4Vectors::metadata(se)$differential_domain_analyses
+  analysis_key <- base_key
+  suffix <- 2L
+  while (!is.null(analyses) && analysis_key %in% names(analyses)) {
+    analysis_key <- paste0(base_key, "_", suffix)
+    suffix <- suffix + 1L
+  }
+
+  canonical_columns <- paste0(analysis_key, "__",
+                              c(colnames(out), "DiffStatus"))
+  for (i in seq_along(out)) rowData(se)[[canonical_columns[i]]] <- out[[i]]
+  rowData(se)[[canonical_columns[length(canonical_columns)]]] <- status
 
   # ---- provenance -----------------------------------------------------------
-  S4Vectors::metadata(se)$differential_domains <- list(
+  prov_diff <- list(
+    result_name = analysis_key,
     feature = feature,
     transform = transform,
     design = design_used,
@@ -287,11 +344,15 @@ analyze_differential_domains <- function(se,
     n_gain = sum(status == "Gain", na.rm = TRUE),
     n_loss = sum(status == "Loss", na.rm = TRUE),
     n_ns = sum(status == "NS", na.rm = TRUE),
+    created_columns = canonical_columns,
     note = paste(
       "Differential test on continuous integrated BigWig signal via limma;",
       "not an exact read-count model. For DESeq2/DiffBind-style count",
       "statistics obtain per-domain counts externally.")
   )
+  if (is.null(analyses)) analyses <- list()
+  analyses[[analysis_key]] <- prov_diff
+  S4Vectors::metadata(se)$differential_domain_analyses <- analyses
   se
 }
 
@@ -306,9 +367,16 @@ analyze_differential_domains <- function(se,
 #' @param se A SummarizedExperiment after \code{analyze_differential_domains()}.
 #' @param feature Character. Differential feature column (default "Intensity").
 #' @param logFC_col,padj_col Character. Column names for logFC and adjusted
-#'   P-value (default constructed from \code{feature}).
+#'   P-value. By default they are resolved from the selected canonical
+#'   differential result.
 #' @param label_n Integer. Number of top domains to label with
 #'   \code{top_candidate_gene_symbol} / gene symbol if available (default 0).
+#' @param result_name Character or NULL. Differential result to plot. May be
+#'   either the full metadata key (for example
+#'   \code{"Intensity_Diff__Control_vs_Treatment"}) or its result suffix
+#'   (\code{"Control_vs_Treatment"}). When NULL, the result is selected
+#'   automatically only if exactly one analysis exists for \code{feature}; with
+#'   multiple analyses, supply \code{result_name} or explicit column names.
 #' @import ggplot2
 #' @return A ggplot object.
 #' @examples
@@ -322,16 +390,90 @@ analyze_differential_domains <- function(se,
 #' @export
 plot_differential_volcano <- function(se, feature = "Intensity",
                                       logFC_col = NULL, padj_col = NULL,
-                                      label_n = 0) {
+                                      label_n = 0, result_name = NULL) {
   pfx <- feature
-  if (is.null(logFC_col)) logFC_col <- paste0(pfx, "_logFC")
-  if (is.null(padj_col)) padj_col <- paste0(pfx, "_adj.P.Val")
   rd <- as.data.frame(rowData(se), optional = TRUE)
+  analyses <- S4Vectors::metadata(se)$differential_domain_analyses
+  if (is.null(analyses)) analyses <- list()
+  analysis_keys <- names(analyses)[vapply(analyses, function(x) {
+    identical(x$feature, feature)
+  }, logical(1))]
+  analysis_key <- NULL
+
+  if (!is.null(result_name)) {
+    if (!is.character(result_name) || length(result_name) != 1L ||
+        is.na(result_name) || !nzchar(result_name)) {
+      stop("result_name must be NULL or one non-empty character string.",
+           call. = FALSE)
+    }
+    clean_name <- gsub("[^[:alnum:]_.-]+", "_", result_name)
+    requested_keys <- unique(c(
+      result_name,
+      paste0(feature, "_Diff__", result_name),
+      paste0(feature, "_Diff__", clean_name)
+    ))
+    hits <- intersect(requested_keys, analysis_keys)
+    if (length(hits) != 1L) {
+      stop("Differential result '", result_name, "' was not found for feature '",
+           feature, "'. Available: ",
+           if (length(analysis_keys) == 0L) "none" else
+             paste(analysis_keys, collapse = ", "), ".", call. = FALSE)
+    }
+    analysis_key <- hits
+  }
+
+  # Explicit canonical columns can identify their own result key. This keeps
+  # the column-level override useful without depending on a latest-result alias.
+  if (is.null(analysis_key) && !is.null(logFC_col) &&
+      grepl("__logFC$", logFC_col)) {
+    candidate <- sub("__logFC$", "", logFC_col)
+    if (candidate %in% analysis_keys) analysis_key <- candidate
+  }
+  if (is.null(analysis_key) && !is.null(padj_col) &&
+      grepl("__adj\\.P\\.Val$", padj_col)) {
+    candidate <- sub("__adj\\.P\\.Val$", "", padj_col)
+    if (candidate %in% analysis_keys) analysis_key <- candidate
+  }
+  if (is.null(analysis_key) && length(analysis_keys) == 1L) {
+    analysis_key <- analysis_keys
+  }
+
+  needs_default <- is.null(logFC_col) || is.null(padj_col)
+  if (is.null(analysis_key) && needs_default && length(analysis_keys) > 1L) {
+    stop("Multiple differential results exist for feature '", feature,
+         "'. Supply result_name or explicit logFC_col and padj_col. Available: ",
+         paste(analysis_keys, collapse = ", "), ".", call. = FALSE)
+  }
+  if (!is.null(analysis_key)) {
+    if (is.null(logFC_col)) logFC_col <- paste0(analysis_key, "__logFC")
+    if (is.null(padj_col)) padj_col <- paste0(analysis_key, "__adj.P.Val")
+  } else if (length(analysis_keys) == 0L) {
+    # Read compatibility for objects produced before canonical result keys were
+    # introduced. New analyses never create these unqualified columns.
+    if (is.null(logFC_col) && paste0(pfx, "_logFC") %in% colnames(rd)) {
+      logFC_col <- paste0(pfx, "_logFC")
+    }
+    if (is.null(padj_col) && paste0(pfx, "_adj.P.Val") %in% colnames(rd)) {
+      padj_col <- paste0(pfx, "_adj.P.Val")
+    }
+  }
+
+  if (is.null(logFC_col) || is.null(padj_col)) {
+    stop("No canonical differential result found for feature '", feature,
+         "'. Run analyze_differential_domains() first or supply explicit ",
+         "logFC_col and padj_col.", call. = FALSE)
+  }
   if (!logFC_col %in% colnames(rd) || !padj_col %in% colnames(rd)) {
     stop("Run analyze_differential_domains(feature = '", feature, "') first. ",
          "Missing '", logFC_col, "' / '", padj_col, "'.", call. = FALSE)
   }
-  status_col <- paste0(pfx, "_DiffStatus")
+  status_col <- if (!is.null(analysis_key)) {
+    paste0(analysis_key, "__DiffStatus")
+  } else if (grepl("__logFC$", logFC_col)) {
+    sub("__logFC$", "__DiffStatus", logFC_col)
+  } else {
+    paste0(pfx, "_DiffStatus")
+  }
   lbl_col <- if ("top_candidate_gene_symbol" %in% colnames(rd))
     "top_candidate_gene_symbol" else if ("gene_symbol" %in% colnames(rd))
     "nearest_tss_gene_symbol" else "Domain_ID"

@@ -9,7 +9,11 @@
 #' to be stitched together. For Super-Elements, 12500 (12.5 kb) is standard.
 #' For standard broad marks, you might use 3000 to 5000.
 #' @return A GRanges object of stitched domains, with a metadata column
-#' 'Constituent_Peaks' recording how many original peaks were merged into each domain.
+#' 'Constituent_Peaks' recording how many original peaks were merged into each
+#' domain. The call is recorded in \code{S4Vectors::metadata()} under
+#' \code{stitch_provenance} (input/output counts, distance, timestamp), and is
+#' propagated into \code{metadata(se)$stitch_provenance} by
+#' \code{build_portrait_matrix()} when the stitched domains are used there.
 #' @import GenomicRanges
 #' @examples
 #' gr <- GenomicRanges::GRanges("chr1",
@@ -38,6 +42,17 @@ stitch_epi_peaks <- function(gr, stitch_distance = 12500) {
   stitched_gr <- GenomicRanges::reduce(gr, min.gapwidth = stitch_distance + 1)
 
   mcols(stitched_gr)$Constituent_Peaks <- countOverlaps(stitched_gr, gr)
+
+  # Stitching determines the domain geometry used by every downstream layer,
+  # so the call itself must be auditable: record what was merged and how far.
+  S4Vectors::metadata(stitched_gr)$stitch_provenance <- list(
+    stitch_distance_bp = stitch_distance,
+    min_gapwidth_used = stitch_distance + 1,
+    n_input_peaks = length(gr),
+    n_output_domains = length(stitched_gr),
+    rule = "GenomicRanges::reduce with gap <= stitch_distance merged",
+    call = match.call(),
+    timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE))
 
   message(sprintf("Stitching complete: %d original peaks were stitched into %d continuous domains.",
                   length(gr), length(stitched_gr)))
@@ -103,10 +118,9 @@ filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000, downstre
 
 #' Normalize Portrait Assays
 #'
-#' @description Normalizes the Intensity assay while preserving
-#'   SignalDispersion in its native bp-scale units. Corrects the Intensity
-#'   matrix to account for differences in sequencing depth or distribution
-#'   across samples.
+#' @description Optionally normalizes the Intensity assay while preserving
+#'   SignalDispersion in its native bp-scale units. The recommended workflow
+#'   uses quantitatively comparable BigWigs and \code{method = "None"}.
 #'
 #' @param se A SummarizedExperiment object from build_portrait_matrix().
 #' @param method Normalization method. Options are:
@@ -120,39 +134,63 @@ filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000, downstre
 #'           the analyzed domain set. WARNING: this assumes approximately
 #'           conserved total signal across samples and may remove real global
 #'           gains/losses (e.g. drug-induced chromatin loss).
-#'     \item \code{"TMM"}: Trimmed Mean of M-values. Designed for count data;
-#'           use \code{force_TMM = TRUE} for continuous BigWig signals.
 #'     \item \code{"Quantile"}: Forces identical distributions across samples
-#'           (uses limma). Not recommended for between-condition comparison.
+#'           (uses limma). This is an explicitly warned sensitivity-analysis
+#'           option, not a recommended between-condition normalization.
 #'   }
+#'   TMM is intentionally not offered because it is a count-composition method,
+#'   whereas epiPortrait operates on continuous integrated BigWig signal.
 #'   Row-wise Z-score scaling is not offered here: it is a display/clustering
 #'   transform that would destroy the cross-domain magnitude ranking used for
 #'   Super calling. Use \code{plot_portrait_pca()} or plotting layers for
 #'   display-only scaling.
-#' @param force_TMM Logical. If \code{TRUE}, allows TMM normalization on continuous
-#'   BigWig signals despite TMM being designed for count data. Default is \code{FALSE}.
-#' @return A normalized SummarizedExperiment object.
+#' @return A SummarizedExperiment. The decision and, when applicable, scaling
+#'   factors and before/after sample totals are stored in
+#'   \code{metadata(se)$normalization}. A second post-hoc normalization of an
+#'   object already marked as normalized is rejected.
 #' @import SummarizedExperiment
 #' @examples
 #' data(example_se)
 #' normalize_portrait(example_se, method = "None")
 #' @export
-normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
+normalize_portrait <- function(se, method = "None") {
+
+  valid_methods <- c("None", "TotalSignal", "Quantile")
+  if (!method %in% valid_methods) {
+    stop("Invalid method. Choose from: 'None', 'TotalSignal', or 'Quantile'.")
+  }
 
   if (method == "None") {
-    message("Method set to 'None'. Skipping normalization (assuming input BigWigs are pre-normalized).")
+    if (is.null(S4Vectors::metadata(se)$normalization)) {
+      S4Vectors::metadata(se)$normalization <- list(
+        method = "None",
+        applied = FALSE,
+        input_assay = .resolve_assay(se, "Intensity"),
+        assumption = paste(
+          "Input BigWigs are already quantitatively comparable",
+          "(same processing and CPM/RPGC/spike-in normalization).")
+      )
+    }
+    message("Method set to 'None'. Skipping normalization; input BigWigs are assumed to be quantitatively comparable.")
     return(se)
   }
 
-  valid_methods <- c("TotalSignal", "TMM", "Quantile")
-  if (!method %in% valid_methods) {
-    stop(sprintf("Invalid method. Choose from: 'None', '%s'", paste(valid_methods, collapse = "', '")))
+  previous <- S4Vectors::metadata(se)$normalization
+  if (!is.null(previous) && isTRUE(previous$applied)) {
+    stop("Intensity is already marked as normalized by normalize_portrait() ",
+         "using method = '", previous$method, "'. Return to the pre-normalized ",
+         "object instead of applying a second post-hoc normalization.")
   }
 
   message(sprintf("Normalizing features using '%s' method...", method))
 
-  int_mat <- assay(se, .resolve_assay(se, "Intensity"))
-  disp_mat <- assay(se, .resolve_assay(se, "SignalDispersion"))
+  intensity_assay <- .resolve_assay(se, "Intensity")
+  dispersion_assay <- .resolve_assay(se, "SignalDispersion")
+  int_mat <- assay(se, intensity_assay)
+  disp_mat <- assay(se, dispersion_assay)
+  input_totals <- stats::setNames(colSums(int_mat, na.rm = TRUE), colnames(se))
+  scaling_factors <- NULL
+  assumption <- NULL
 
   if (method == "TotalSignal") {
     warning(
@@ -160,7 +198,7 @@ normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
       "analyzed domain set. It assumes approximately conserved total signal and ",
       "may remove genuine global biological shifts (e.g. drug-induced chromatin ",
       "loss). Consider using pre-normalized BigWigs (method = 'None') for ",
-      "between-condition comparison."
+      "between-condition comparison.", call. = FALSE
     )
     sample_sums <- colSums(int_mat, na.rm = TRUE)
     target_scale <- mean(sample_sums)
@@ -169,49 +207,34 @@ normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
     bad <- !is.finite(scaling_factors)
     if (any(bad)) {
       warning(sprintf("%d sample(s) have zero total signal; scaling factors set to 1.",
-                      sum(bad)))
+                      sum(bad)), call. = FALSE)
       scaling_factors[bad] <- 1
     }
 
     norm_int <- sweep(int_mat, 2, scaling_factors, FUN = "*")
     colData(se)$ScalingFactor <- scaling_factors
-
-  } else if (method == "TMM") {
-    if (!requireNamespace("edgeR", quietly = TRUE)) stop("Please install 'edgeR' to use TMM.")
-
-    if (!force_TMM) {
-      stop(
-        "TMM normalization is designed for count data and may produce unreliable ",
-        "scaling factors on continuous BigWig signals. ",
-        "Use 'TotalSignal' or 'Quantile' for continuous data, or set force_TMM = TRUE ",
-        "if you understand the risks and still want to proceed."
-      )
-    }
-
-    warning(
-      "TMM normalization was forced on continuous BigWig data. ",
-      "Scaling factors may be unreliable. ",
-      "Consider TotalSignal or Quantile normalization instead."
-    )
-
-    lib_sizes <- colSums(int_mat, na.rm = TRUE)
-    norm_factors <- edgeR::calcNormFactors(int_mat, method = "TMM", lib.size = lib_sizes)
-
-    eff_lib_sizes <- lib_sizes * norm_factors
-    target_scale <- mean(eff_lib_sizes)
-    scaling_factors <- target_scale / eff_lib_sizes
-
-    norm_int <- sweep(int_mat, 2, scaling_factors, FUN = "*")
-    colData(se)$TMM_NormFactor <- norm_factors
-    colData(se)$ScalingFactor <- scaling_factors
+    assumption <- paste(
+      "The total signal over the analyzed domain universe is approximately",
+      "conserved across samples.")
 
   } else if (method == "Quantile") {
-    if (!requireNamespace("limma", quietly = TRUE)) stop("Please install 'limma' to use Quantile normalization.")
+    if (!requireNamespace("limma", quietly = TRUE)) {
+      stop("Please install 'limma' to use Quantile normalization.")
+    }
+    warning(
+      "Quantile normalization forces identical Intensity distributions across ",
+      "samples and can erase genuine global biological shifts. Use it only as ",
+      "an explicitly justified sensitivity analysis, not as the default for ",
+      "between-condition comparisons.", call. = FALSE
+    )
 
     norm_int <- limma::normalizeBetweenArrays(int_mat, method = "quantile")
+    assumption <- paste(
+      "Differences in marginal Intensity distributions are treated as",
+      "technical rather than biological.")
   }
 
-  assay(se, .resolve_assay(se, "Intensity")) <- norm_int
+  assay(se, intensity_assay) <- norm_int
 
   # SignalDispersion is not rescaled. It is a spatial measure in bp that
   # is invariant under a uniform multiplicative rescaling of the signal
@@ -220,9 +243,24 @@ normalize_portrait <- function(se, method = "None", force_TMM = FALSE) {
   # biological interpretation. Row-wise Z-score scaling is likewise not applied:
   # it would destroy the cross-domain magnitude ranking used for Super calling;
   # plotting / PCA layers apply their own display scaling.
-  if (!identical(disp_mat, assay(se, "SignalDispersion"))) {
+  if (!identical(disp_mat, assay(se, dispersion_assay))) {
     stop("SignalDispersion was unexpectedly modified during normalization.")
   }
+
+  S4Vectors::metadata(se)$normalization <- list(
+    method = method,
+    applied = TRUE,
+    input_assay = intensity_assay,
+    transformed_assay = intensity_assay,
+    signal_type = "continuous integrated BigWig signal",
+    scaling_factors = if (is.null(scaling_factors)) NULL else
+      stats::setNames(as.numeric(scaling_factors), colnames(se)),
+    input_sample_totals = input_totals,
+    output_sample_totals = stats::setNames(
+      colSums(norm_int, na.rm = TRUE), colnames(se)),
+    assumption = assumption,
+    SignalDispersion_modified = FALSE
+  )
 
   message("Normalization complete! Intensity adjusted; SignalDispersion ",
           "(bp-scale spatial descriptor) is left unchanged.")

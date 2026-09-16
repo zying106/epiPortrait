@@ -14,34 +14,43 @@ on:
 jobs:
   bioccheck:
     runs-on: ubuntu-latest
+    container: bioconductor/bioconductor_docker:devel
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      _R_CHECK_FORCE_SUGGESTS_: false
+      _R_CHECK_FORCE_SUGGESTS_: true
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          use-public-rspm: true
-
-      # Bioconductor repositories are resolved automatically from DESCRIPTION
-      # by setup-r-dependencies.
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: |
-            any::BiocCheck
-            any::rcmdcheck
-            any::txdbmaker
-            any::edgeR
-            any::org.Hs.eg.db
-          needs: check
+      - name: Install dependencies in Bioconductor devel
+        run: |
+          BiocManager::install(c("BiocCheck", "rcmdcheck", "remotes"),
+                               ask = FALSE, update = TRUE)
+          remotes::install_deps(dependencies = TRUE, upgrade = "never",
+                                repos = BiocManager::repositories())
+          print(BiocManager::version())
+          print(sessionInfo())
+        shell: Rscript {0}
 
       - name: Build tarball
         run: R CMD build .
 
       - name: BiocCheck
         run: |
-          tarball <- list.files(pattern = "^epiPortrait_.*[.]tar[.]gz$")[1]
-          BiocCheck::BiocCheck(tarball, `no-check-bioc-help` = TRUE)
+          version <- read.dcf("DESCRIPTION", fields = "Version")[[1]]
+          tarball <- paste0("epiPortrait_", version, ".tar.gz")
+          stopifnot(file.exists(tarball))
+          rcmdcheck::rcmdcheck(tarball, args = c("--no-manual", "--as-cran"),
+                               error_on = "warning", check_dir = "check")
+          result <- BiocCheck::BiocCheck(tarball, `no-check-bioc-help` = TRUE)
+          stopifnot(length(result$error) == 0L,
+                    length(result$warning) == 0L)
         shell: Rscript {0}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bioconductor-devel-checks
+          path: |
+            check
+            epiPortrait.BiocCheck

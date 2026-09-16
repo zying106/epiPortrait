@@ -32,3 +32,17 @@ test_that("stitch_epi_peaks merges peaks with gap exactly equal to distance", {
   expect_equal(start(res), 1)
   expect_equal(end(res), 1200)
 })
+
+test_that("stitch_epi_peaks records an auditable provenance", {
+  gr <- GenomicRanges::GRanges("chr1",
+                               IRanges::IRanges(c(100, 250, 5000),
+                                                c(200, 350, 5200)))
+  res <- stitch_epi_peaks(gr, stitch_distance = 1000)
+  prov <- S4Vectors::metadata(res)$stitch_provenance
+  expect_false(is.null(prov))
+  expect_equal(prov$stitch_distance_bp, 1000)
+  expect_equal(prov$min_gapwidth_used, 1001)
+  expect_equal(prov$n_input_peaks, 3L)
+  expect_equal(prov$n_output_domains, length(res))
+  expect_true(nzchar(prov$timestamp))
+})

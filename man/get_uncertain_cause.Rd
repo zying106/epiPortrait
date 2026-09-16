@@ -19,15 +19,27 @@ stored provenance when NULL (default "Condition").}
 }
 \value{
 A data.frame with columns \code{Domain_ID}, \code{Group_Call},
-\code{N_Valid_Replicates}, \code{Min_Valid_Replicates}, \code{Cause}.
+\code{N_Valid_Replicates}, \code{N_Assessable_Replicates},
+\code{Min_Valid_Replicates}, and \code{Cause}. For Breadth,
+\code{N_Valid_Replicates} counts Broad/Typical evidence, whereas
+\code{N_Assessable_Replicates} also counts operational
+\code{PeakAbsent} evidence.
 }
 \description{
 For a per-group feature call, classifies the cause of each
 \code{NA} / \code{Uncertain} group call so the ambiguity is auditable:
 \itemize{
-\item \code{no_native_peak_in_condition} (\code{Breadth}): the domain has
-no native peak evidence in any replicate of the group — e.g. it is
-condition-specific (present only in the other condition's universe).
+\item \code{peak_absent_by_support_rule} (\code{Breadth}): enough
+callable replicates have no eligible native peak overlapping the
+domain. This is operational peak-call absence, not proof of
+biological disappearance.
+\item \code{mixed_peak_presence} (\code{Breadth}): callable replicates
+disagree between peak presence and peak absence.
+\item \code{overlap_without_unique_assignment} (\code{Breadth}): peaks
+overlap the domain, but none can be assigned uniquely at the
+selected overlap threshold.
+\item \code{insufficient_assessable_replicates} (\code{Breadth}): too
+few replicates distinguish peak presence from operational absence.
 \item \code{no_valid_signal_in_any_replicate} (signal features): no
 replicate produced a usable ranked distribution.
 \item \code{insufficient_valid_replicates}: some, but fewer than
@@ -35,6 +47,10 @@ replicate produced a usable ranked distribution.
 with a majority rule).
 \item \code{inflection_no_call_all_replicates}: every replicate's
 inflection was unreliable (\code{no_call}).
+\item \code{sharp_peak_regime} (\code{Breadth}): every replicate was
+withheld by the \code{min_broad_width_bp} sharp-peak guard (all
+eligible native peaks narrower than the floor), so no Broad
+evidence exists by design; use \code{feature = "Intensity"}.
 }
 Domains whose group call is \emph{not} \code{NA} get \code{cause = NA}.
 This reads stored provenance only and never re-computes calls.

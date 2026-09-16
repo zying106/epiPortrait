@@ -30,16 +30,39 @@ inst/doc/
 # Development artifacts
 Re1.zip
 *.h5
+*.zip
 cache/
 epiPortrait_*.tar.gz
 ..Rcheck/
 epiPortrait.Rcheck/
+epiPortrait.BiocCheck/
 generated_plots/
 README.html
 README.tex
 Rplots.pdf
-validation/
 
 # Internal review / blueprint records (not part of the package)
 epiPortrait1[0-9]_*.md
 epiPortrait_*.md
+tests_latest_review*.md
+
+# ---------------------------------------------------------------------------
+# Bioconductor submission hygiene: development / manuscript artifacts that are
+# NOT part of the R package and must never be committed.
+# ---------------------------------------------------------------------------
+# Manuscripts, PDFs and archives
+*.pdf
+# Local benchmark / validation analyses
+benchmark/
+validation/
+# Figure sources / scratch folders
+graph abstact/
+未命名文件夹/
+未命名文件夹.zip
+# Cluster / peak-prep helper scripts and sample sheets
+download_*.sh
+prepare_*.sh
+resolve_*.sh
+*.list
+primary_*.txt
+HepG2_ENCODE_ChIP_curated.tsv

@@ -15,7 +15,11 @@ For standard broad marks, you might use 3000 to 5000.}
 }
 \value{
 A GRanges object of stitched domains, with a metadata column
-'Constituent_Peaks' recording how many original peaks were merged into each domain.
+'Constituent_Peaks' recording how many original peaks were merged into each
+domain. The call is recorded in \code{S4Vectors::metadata()} under
+\code{stitch_provenance} (input/output counts, distance, timestamp), and is
+propagated into \code{metadata(se)$stitch_provenance} by
+\code{build_portrait_matrix()} when the stitched domains are used there.
 }
 \description{
 Merges closely spaced peaks into larger continuous macro-domains based on

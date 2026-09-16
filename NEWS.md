@@ -1,3 +1,159 @@
+# epiPortrait 0.99.4
+
+* Made enrichment examples runnable (removed all `\donttest{}` man-page tags).
+  The examples for `enrich_epi_genes()`, `enrich_epi_domains()`,
+  `gsea_epi_genes()`, `compare_epi_enrichment()`, `plot_epi_enrichment()` and
+  `as_enrich_result()` are guarded by `requireNamespace()` and execute on
+  installations that provide the optional annotation packages.
+* Refactored the annotation engine internals: `annotate_epi_domains()` now
+  delegates linear-evidence assembly, BEDPE loading/seqlevel checks, gene-symbol
+  resolution, contact-score joining and expression-evidence construction to
+  focused internal helpers, reducing the function from 366 to 189 lines with no
+  change to outputs.
+* Unified the annotation summary/dedup rebuild into a single internal
+  implementation (`.rebuild_annotation_views()`). The native annotator
+  (`annotate_epi_domains()`) and the external importer
+  (`import_domain_annotations()`) now funnel their raw links through the same
+  function, so the evidence tier, per-pair collapse and per-domain summary
+  semantics cannot drift between the two paths. Native links now also carry the
+  `annotation_source` provenance column (`epiPortrait:native` /
+  `epiPortrait:BEDPE`), matching the external importer.
+* `import_domain_annotations()` now requires a stable `bedpe_record_id` for
+  every `bedpe_promoter_contact` row instead of silently synthesizing one per
+  call. Generated ids restart per import and could collide across repeated
+  `mode = "append"` calls, undercounting contact support; a missing value is
+  now a clear error.
+* Added `import_domain_annotations()` for validated import of externally
+  generated domain-gene links after conversion to epiPortrait's documented
+  long-table schema. The importer supports replacement or explicit append,
+  rebuilds all annotation views, records provenance, and invalidates stored
+  enrichment results whose gene universe has changed.
+* Corrected an internal annotation comment that previously implied exon-,
+  intron- and downstream-specific relationships were generated.
+* Preserve interpolated quantile thresholds in continuous-feature calling.
+  Strict and inclusive tie rules now compare against the requested quantile
+  rather than the first observed value above it.
+* Match Breadth evidence and reasons by domain and sample IDs after reordering
+  or subsetting. Reject missing, duplicate or inconsistent stored identifiers.
+  Group summaries still require recalling after changing replicate membership.
+* Correct ORA gene ratios and calculate background ratios and odds ratios
+  using the ontology-specific denominators reported by the enrichment engine.
+* Added an orthogonal Breadth presence-evidence layer with four explicit
+  replicate states: `Broad`, `Typical`, `PeakAbsent`, and `NoCall`.
+  `PeakAbsent` is assigned only when the replicate-level width call is valid
+  and no eligible native peak overlaps a shared domain; overlaps lacking a
+  unique threshold-passing assignment remain `NoCall`. Group-level presence
+  and absence fractions use all replicates as the denominator, so technical
+  no-calls cannot inflate evidence. The canonical Breadth and combined
+  taxonomies are unchanged. Use `get_breadth_evidence()` for the full evidence
+  and reason matrices; exports include `calls/breadth_domain_evidence.tsv`.
+* Static `rowData` features such as `IntervalWidth` are now ranked exactly once
+  over the shared domain universe. They are no longer copied across samples to
+  manufacture replicate support; `per_group` and `per_sample` modes reject
+  static features explicitly, and provenance records `mode = "static"`.
+* `normalize_portrait()` no longer offers TMM, which is a count-composition
+  method rather than a normalization for continuous integrated BigWig signal.
+  Quantile normalization now emits its documented biological-risk warning;
+  all decisions, assumptions, factors and sample totals are recorded in
+  `metadata(se)$normalization`, and accidental repeated normalization is
+  rejected.
+* Removed a BiocCheck condition-signal NOTE from the Breadth sharp-peak warning.
+* Removed mutable latest-result compatibility aliases from transition and
+  differential outputs. Results are now exposed only through pair/scope-specific
+  rowData columns and `metadata(se)$differential_domain_analyses`; repeated
+  analyses cannot change the meaning of an existing unqualified column.
+  `plot_differential_volcano()` resolves the sole canonical analysis
+  automatically and requires `result_name` when several analyses exist. Reading
+  explicitly supplied legacy columns remains supported for older objects.
+* `custom_features` now has an enforced assay contract: functions receive one
+  domain's sanitized numeric coverage vector and must return one finite numeric
+  value or `NA_real_`. Empty, duplicate, non-syntactic and reserved feature
+  names are rejected before parallel extraction, preventing custom assays from
+  silently overwriting core features such as `Intensity`. Custom-function
+  failures are always fatal rather than being converted into sample drops by
+  `fail_action = "drop"`.
+* Breadth-Super caller gains a sharp-peak guard: `min_broad_width_bp`
+  (default 500 bp). If a replicate's widest eligible native peak is narrower
+  than the floor, the width distribution is in the sharp-peak regime and the
+  replicate produces no Broad evidence (`Uncertain`, with a warning and
+  `sharp_peak_regime` provenance) instead of labelling narrow peaks "broad".
+  Applied to both the inflection and `quantile_cutoff` paths; set to `NULL`
+  to disable. Sharp-peak data should use `feature = "Intensity"`.
+  `get_uncertain_cause()` reports the new `sharp_peak_regime` cause.
+* `annotate_epi_domains()` no longer crashes when a domain set yields zero
+  domain-gene links (e.g. all domains on a gene-less seqlevel): the raw link
+  table is stored with its documented typed schema and `get_domain_genes()`
+  reports the empty evidence explicitly.
+* Fixed three `sprintf()` warnings (BEDPE seqlevel mismatch, SYMBOL mapping
+  failure, RNA ID match fraction) that silently dropped their trailing text.
+* `annotate_epi_domains()` gains `nearest_tss_cutoff_bp`, so the stored
+  `best_tier` / `best_relation` and `get_domain_genes()`'s `evidence_tier`
+  cannot drift apart; `best_tier` is now the pair's exact maximum row tier.
+* `nearest_tss_distance_bp` now carries the SAME strand-aware signed distance
+  in rowData, `annotation_summary`, `domain_gene_links_dedup` and
+  `get_domain_genes()` (previously the pair-level tables stored the absolute
+  value).
+* BEDPE `bedpe_contact_score_n` now always counts the unique supporting
+  records, including runs without `bedpe_score_col` (previously 0 there);
+  `bedpe_contact_score` / `_max` / `_mean` remain NA for unscored contacts.
+  `rank_by = "bedpe_score"` now lets unscored contacts fall back to the
+  evidence tier rather than ranking them below domains with no contact at all.
+* `export_epiportrait_results()` now writes all three documented annotation
+  levels (`annotation_summary.tsv`, `domain_gene_links_dedup.tsv`,
+  `domain_gene_links.tsv`).
+* `get_epi_enrichment(name = NULL)` now consistently returns the named list
+  for both enrichment and comparison results; `plot_epi_enrichment()` unwraps
+  a single stored comparison and requires `name` when several exist.
+* `get_domain_genes(domains =)` now requires a logical vector;
+  `expression_rank` is recomputed as a contiguous rank over the returned
+  table after `max_per_domain` / `unique_genes` filtering.
+* Documentation corrections: mm9 is not a built-in annotation shortcut
+  (blacklist only); `annotate_epi_domains()` adds 13 rowData columns, not 7.
+* Corrected ORA 95% confidence intervals by converting the odds-ratio standard
+  error from natural-log to log2 units before combining it with the log2 odds
+  ratio.
+* Transition results now have scope- and pair-specific rowData columns and
+  provenance keys, preventing later feature, scope, or group comparisons from
+  overwriting earlier results. Historical unqualified columns remain as
+  last-result compatibility aliases.
+* Differential-domain analysis now rejects multi-column contrast matrices with
+  an explicit error. Each single-contrast call is retained under a unique
+  pair-specific rowData prefix and in the differential_domain_analyses metadata
+  list; historical feature-level columns and differential_domains metadata
+  remain last-result aliases.
+* New domain-aware functional interpretation layer (optional; requires
+  `clusterProfiler`, `GO.db` and an OrgDb, all in Suggests):
+  * `get_domain_gene_universe()` builds the background from the genes linked
+    to the object's own domains (never all organism genes), restricted to the
+    annotation database's testable key space.
+  * `enrich_epi_domains()` runs GO ORA on a discrete phenotype / transition
+    selector or GSEA on a continuous `rowData` statistic (e.g.
+    `Intensity_t`, `log2WidthRatio__A_vs_B`); results are stored in
+    `metadata(se)$enrichment` and retrieved with `get_epi_enrichment()`.
+  * `rank_epi_genes()` aggregates per-domain signed scores to gene level with
+    evidence-tier weights (`signed_weighted` default; `best_domain`, `mean`,
+    `max_abs`, `sum` alternatives).
+  * `gsea_epi_genes()` runs ranked enrichment on the domain-derived testable
+    universe with a recorded seed.
+  * `compare_epi_enrichment()` compares phenotypes / transitions against ONE
+    shared universe and reports per-term log2 odds ratios with 95% CI;
+    `plot_epi_enrichment()` draws the comparative effect-size heatmap.
+  * `as_enrich_result()` returns the stored clusterProfiler object so the
+    enrichplot ecosystem can be used without reimplementation.
+* `get_domain_genes()` gains `evidence_tier` (0-4 ordinal evidence strength)
+  and an optional `max_per_domain` cap (transparent alternative to
+  permutation-based control of wide-domain gene-link inflation).
+* `stitch_epi_peaks()` now records an auditable `stitch_provenance` in
+  `S4Vectors::metadata()` (distance, min gapwidth used, input peak and output
+  domain counts, timestamp); `build_portrait_matrix()` propagates it to
+  `metadata(se)$stitch_provenance` when stitched domains are used, so the
+  analysis-native geometry remains traceable.
+* Enrichment defaults are mark-aware: broad repressive marks use
+  promoter-overlap links only, active marks add proximal nearest-TSS and
+  BEDPE contacts. GO `simplify()` runs on the significant subset only, which
+  keeps it fast and semantically meaningful; raw and simplified results are
+  both retained.
+
 # epiPortrait 0.99.3
 
 * Docker/docs polish and manuscript-readiness pass performed on top of 0.99.2;

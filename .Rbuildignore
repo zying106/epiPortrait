@@ -6,6 +6,7 @@
 ^man/figures/.*_unused\.png$
 ^\.claude$
 ^epiPortrait\.Rcheck$
+^epiPortrait\.BiocCheck$
 ^\.\.Rcheck$
 ^epiPortrait_.*\.tar\.gz$
 ^R/.*\.bak$
@@ -22,6 +23,9 @@
 ^\.github$
 ^validation$
 ^benchmark$
+^HepG2_ENCODE_ChIP_curated[.]tsv$
+^download_encode_fastq[.]sh$
+^primary_experiments[.]txt$
 ^codecov[.]yml$
 ^vignettes/.*\.html$
 ^doc$
@@ -41,3 +45,16 @@
 ^epiPortrait_tumor_benchmark_dataset_strategy_2026-08-11\.md$
 ^tests_latest_review_and_v2_optimization
 ^\._
+^graph abstact$
+^epiPortrait_GO_and_stitch_optimization_plan\.md$
+^HepG2_ENCODE_ChIP_curated\.tsv$
+^download_encode_fastq\.sh$
+^primary_experiments\.txt$
+^primary_controls\.txt$
+^JARE-S-26-10791\.pdf$
+^aem3920_ArticleContent_v1\.pdf$
+^(info|sample)_(histone|tf)_complete\.list$
+^prepare_.*_fastq\.sh$
+^resolve_hepg2_tf_encode.*\.sh$
+^未命名文件夹$
+^未命名文件夹\.zip$

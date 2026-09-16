@@ -4,6 +4,28 @@
 
 data(example_se)
 
+.make_presence_test_se <- function() {
+  fillers <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(c(20000, 30000, 40000),
+                              c(20100, 30110, 40121)))
+  test_peak <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(525, 775))
+  native_peaks <- c(fillers, test_peak)
+  domains <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(c(100, 500), c(400, 800)))
+  se <- SummarizedExperiment::SummarizedExperiment(
+    assays = list(
+      Intensity = matrix(1, nrow = 2, ncol = 2),
+      SignalDispersion = matrix(1, nrow = 2, ncol = 2)),
+    rowRanges = domains,
+    colData = S4Vectors::DataFrame(Condition = c("A", "A")))
+  rownames(se) <- c("d1", "d2")
+  colnames(se) <- c("S1", "S2")
+  S4Vectors::metadata(se)$native_peaks <- stats::setNames(
+    list(native_peaks, native_peaks), colnames(se))
+  se
+}
+
 # ---- object contract: validation -------------------------------------------
 test_that("validate_epiportrait_object passes on a valid object", {
   expect_true(validate_epiportrait_object(example_se))
@@ -57,6 +79,20 @@ test_that("export_epiportrait_results writes tables + RDS", {
   expect_true(file.exists(file.path(out, "epiPortrait_object.rds")))
   expect_true(file.exists(file.path(out, "object_manifest.txt")))
   expect_true(file.exists(file.path(out, "assays", "Intensity.tsv")))
+})
+
+test_that("export_epiportrait_results writes Breadth evidence", {
+  se <- call_super_domains(example_se, feature = "Breadth",
+                           mode = "per_group", group_var = "Condition",
+                           verbose = FALSE)
+  out <- export_epiportrait_results(
+    se, outdir = tempfile("epi_export_breadth"), group_var = "Condition")
+  path <- file.path(out, "calls", "breadth_domain_evidence.tsv")
+  expect_true(file.exists(path))
+  tab <- utils::read.delim(path, stringsAsFactors = FALSE)
+  expect_equal(nrow(tab), nrow(se) * ncol(se))
+  expect_true(all(unique(tab$Evidence) %in%
+                    c("Broad", "Typical", "PeakAbsent", "NoCall")))
 })
 
 # ---- academic visualization -------------------------------------------------
@@ -341,14 +377,32 @@ test_that("get_uncertain_cause classifies Uncertain origins", {
                            mode = "per_group", group_var = "Condition", verbose = FALSE)
   uc <- get_uncertain_cause(se, feature = "Breadth", group = "Control")
   expect_true(all(c("Domain_ID", "Group_Call", "N_Valid_Replicates",
-                    "Min_Valid_Replicates", "Cause") %in% colnames(uc)))
+                    "N_Assessable_Replicates", "Min_Valid_Replicates",
+                    "Cause") %in% colnames(uc)))
   expect_equal(nrow(uc), nrow(se))
-  # example_se has 6 no-call domains -> insufficient_valid_replicates
-  expect_equal(sum(uc$Cause == "insufficient_valid_replicates", na.rm = TRUE), 6)
   # domains with a real group call have NA cause; uncertain ones have a cause
   called <- !is.na(uc$Group_Call)
   expect_true(all(is.na(uc$Cause[called])))
   expect_true(all(!is.na(uc$Cause[!called])))
+  expect_true(all(uc$Cause[!called] %in%
+                    c("peak_absent_by_support_rule", "mixed_peak_presence",
+                      "overlap_without_unique_assignment",
+                      "insufficient_assessable_replicates",
+                      "insufficient_valid_replicates",
+                      "inflection_no_call_all_replicates",
+                      "sharp_peak_regime")))
+})
+
+test_that("get_uncertain_cause distinguishes PeakAbsent from assignment NoCall", {
+  se <- .make_presence_test_se()
+  se <- call_super_domains(
+    se, feature = "Breadth", mode = "per_group", group_var = "Condition",
+    min_broad_width_bp = NULL, verbose = FALSE)
+  uc <- get_uncertain_cause(se, feature = "Breadth", group = "A")
+  expect_equal(uc$Cause[1], "peak_absent_by_support_rule")
+  expect_equal(uc$N_Valid_Replicates[1], 0L)
+  expect_equal(uc$N_Assessable_Replicates[1], 2L)
+  expect_true(is.na(uc$Cause[2]))
 })
 
 test_that("plot_uncertain_cause returns a ggplot", {

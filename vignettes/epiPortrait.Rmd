@@ -253,7 +253,10 @@ set.
 ### Custom features
 
 You can extend the portrait with arbitrary per-domain statistics. Example
-pattern for real BigWig inputs:
+pattern for real BigWig inputs. Each function receives the sanitized,
+non-missing per-base numeric coverage vector for one domain and must return one
+finite numeric value or `NA_real_`. Custom feature names must be unique,
+syntactically valid R names and must not collide with built-in features.
 
 ```r
 se <- build_portrait_matrix(
@@ -278,8 +281,12 @@ se <- normalize_portrait(example_se, method = "None")
 |:-------|:---------|
 | `None` (default) | Recommended — input BigWigs already quantitatively comparable (CPM/RPGC/spike-in) |
 | `TotalSignal` | Rescale to mean domain-set total signal; **assumes conserved total signal and may remove genuine global biological shifts** |
-| `Quantile` | Force identical distributions across samples (limma); not recommended for between-condition comparison |
-| `TMM` | Count-based scaling (`force_TMM = TRUE` for continuous signal); advanced |
+| `Quantile` | Force identical distributions across samples (limma); warned sensitivity-analysis option, not recommended for between-condition comparison |
+
+TMM is deliberately not offered: it models count composition, whereas
+epiPortrait operates on continuous integrated BigWig signal. Applied
+normalization, assumptions, sample totals and scaling factors are recorded in
+`metadata(se)$normalization`; applying post-hoc normalization twice is rejected.
 
 Row-wise Z-score is intentionally **not** an analysis normalization method in
 epiPortrait: it would destroy the cross-domain magnitude ranking that Super
@@ -405,8 +412,33 @@ The peak-level call (PeakWidth / PeakBroadCall / PeakRank) is stored in
 `metadata(se)$breadth_peak_calls`, and the unique-assignment provenance in
 `metadata(se)$breadth_peak_mapping`.
 
-`IntervalWidth` (alias `Width`) remains available for static region-level
-broadness ranking only — it is constant across samples and never defines a
+Peak presence is retained as a separate evidence layer rather than being
+folded into the canonical Breadth-Super taxonomy:
+
+```{r breadth-evidence}
+head(get_breadth_evidence(se_b, group = "Control", long = TRUE))
+```
+
+| Evidence | Operational meaning |
+|:---------|:--------------------|
+| `Broad` | A uniquely assigned native peak exceeds the replicate-specific width cutoff |
+| `Typical` | A uniquely assigned peak is present, but none is broad |
+| `PeakAbsent` | The replicate is callable and no eligible native peak overlaps the domain |
+| `NoCall` | The replicate is not callable, or overlapping peaks cannot be assigned uniquely at the requested threshold |
+
+`PeakAbsent` describes the supplied peak calls under the recorded pipeline; it
+does not prove biological disappearance. For each condition, rowData contains
+`Breadth_PresenceStatus__<group>`, `Breadth_PresenceFraction__<group>`,
+`Breadth_AbsenceFraction__<group>`, and
+`Breadth_N_Assessable__<group>`. Both fractions use all replicates as the
+denominator, so `NoCall` cannot increase presence or absence support. The full
+evidence and reason matrices are stored in
+`metadata(se)$breadth_domain_evidence`.
+
+`IntervalWidth` (alias `Width`) remains available for one static region-level
+broadness ranking only. It is ranked once over the shared domain universe and
+never copied across samples. Consequently it has no replicate-support columns,
+and `mode = "per_group"` / `"per_sample"` are rejected. It never defines
 sample-specific breadth.
 
 ## 3.5 Combined taxonomy
@@ -436,7 +468,8 @@ se_t <- call_super_domains(example_se, feature = "Intensity",
 se_t <- compare_superdomains(se_t, group_var = "Condition",
                              ref_group = "Control", target_group = "Treatment",
                              feature = "Intensity")
-table(rowData(se_t)$Intensity_Relative_Transition)
+table(rowData(se_t)[[
+  "Intensity_Transition__relative__Control_vs_Treatment"]])
 ```
 
 Transition classes depend on `cutoff_scope`:
@@ -455,10 +488,13 @@ Transition classes depend on `cutoff_scope`:
 se_t2 <- compare_superdomains(se_t, group_var = "Condition",
                               ref_group = "Control", target_group = "Treatment",
                               feature = "Intensity", cutoff_scope = "reference")
-table(rowData(se_t2)$Intensity_Transition__reference)
+table(rowData(se_t2)[[
+  "Intensity_Transition__reference__Control_vs_Treatment"]])
 ```
 
 `Uncertain` is assigned when a per-group call was not reliable (no-call).
+Pair and cutoff scope are encoded in the canonical column name so repeated
+comparisons are retained without a mutable latest-result alias.
 
 # Module 5: Annotation & Visualization
 
@@ -475,6 +511,38 @@ head(SummarizedExperiment::rowData(se)$primary_genomic_context)
 candidates <- get_domain_genes(se)
 head(candidates)
 ```
+
+External annotation programs can be used after their output has been converted
+to epiPortrait's standard domain--gene long table. The required columns are
+`domain_id`, `gene_id`, and `relation_type`; software-specific labels can be
+retained in additional columns. `relation_type` must use one of the five
+canonical relationships documented by `import_domain_annotations()`. The
+package deliberately does not guess program-specific column names or labels.
+
+```{r external-annotation}
+external_links <- data.frame(
+  domain_id = rownames(example_se)[1:2],
+  gene_id = c("1017", "1018"),
+  gene_symbol = c("CDK2", "CDK3"),
+  relation_type = rep("bedpe_promoter_contact", 2),
+  bedpe_record_id = c("loop_0001", "loop_0002"),
+  external_relation = rep("ABC enhancer-gene link", 2),
+  abc_score = c(0.037, 0.024)
+)
+
+se_external <- import_domain_annotations(
+  example_se, external_links,
+  source = "ABC_loop_links", mode = "replace")
+head(S4Vectors::metadata(se_external)$annotation_summary)
+```
+
+Here `abc_score` is retained as an external audit column; it is not silently
+treated as a BEDPE contact score or as an epiPortrait evidence tier. Use
+`mode = "append"` when independently derived regulatory links are intended to
+coexist with native annotation, and `mode = "replace"` when importing into an
+unannotated object or intentionally replacing the active links. Importing links
+rebuilds the pair- and domain-level annotation tables and removes stored
+enrichment results because their gene universe is no longer current.
 
 ## 5.2 Hockey-stick plot
 
@@ -584,7 +652,8 @@ directly on the integrated BigWig intensity with limma:
 se_diff <- analyze_differential_domains(
   se_viz, feature = "Intensity",
   ref_group = "Control", target_group = "Treatment")
-table(rowData(se_diff)$Intensity_DiffStatus)   # Gain / Loss / NS
+table(rowData(se_diff)[[
+  "Intensity_Diff__Control_vs_Treatment__DiffStatus"]]) # Gain / Loss / NS
 ```
 
 Paired, blocked, and multi-factor designs are supported through `design` and a
@@ -867,6 +936,109 @@ se_boot <- call_super_domains(example_se, feature = "Intensity",
                               n_bootstrap = 25, seed = 1)
 metadata(se_boot)$superdomain_calls$Intensity$cutoff_stability_interval
 ```
+
+# Module 7: Functional interpretation (optional)
+
+`annotate_epi_domains()` links domains to candidate genes; the enrichment
+layer answers *which biological programs* those domain phenotypes or
+remodeling modes correspond to. Two designs are supported, and both use the
+same explicit background: the genes linked to the object's own domains
+(`get_domain_gene_universe()`), restricted to the annotation database's
+testable genes. All-organism backgrounds are intentionally not offered,
+because they ignore the domain universe and inflate enrichment.
+
+This module needs `clusterProfiler`, `GO.db` and an OrgDb (`org.Hs.eg.db` /
+`org.Mm.eg.db`); all are in `Suggests`, so the chunks below are not evaluated.
+
+## 7.1 Discrete phenotypes: ORA
+
+Select the foreground with the existing getters; the enrichment function never
+re-parses phenotype strings:
+
+```{r enrichment-ora, eval=FALSE}
+se <- annotate_epi_domains(se, genome = "hg38")
+cls <- rowData(se)$Combined_Class__Control   # from the Module 5/6 workflow
+
+se <- enrich_epi_domains(
+  se,
+  domains = cls == "Breadth-Super",
+  mark = "H3K27ac")
+res <- get_epi_enrichment(se)[[1]]
+head(res$result[, c("term_name", "count", "effect", "p_adjust")])
+```
+
+Every tested term is returned with a log2 odds ratio and 95% CI (`effect`,
+`effect_low`, `effect_high`), so results can be compared across groups of
+different sizes. `simplify()` runs on the significant subset and both the raw
+and simplified tables are retained; `as_enrich_result(res)` returns the
+clusterProfiler object for use with `enrichplot`.
+
+## 7.2 Continuous remodeling: ranked enrichment
+
+For continuous axes, do not cut the phenotype into boxes. Rank genes directly
+by the per-domain statistic and run GSEA — this is the mode that matches the
+package's quantitative framework:
+
+```{r enrichment-gsea, eval=FALSE}
+se <- analyze_differential_domains(se, feature = "Intensity",
+                                   ref_group = "Control",
+                                   target_group = "Treatment")
+se <- enrich_epi_domains(
+  se, method = "GSEA",
+  score_col = "Intensity_Diff__Control_vs_Treatment__t")
+get_epi_enrichment(se)[[1]]$result[1:5, c("term_name", "effect", "p_adjust")]
+
+# width remodeling instead of signal remodeling
+se <- compute_width_transition(se, ref_group = "Control",
+                               target_group = "Treatment")
+se <- enrich_epi_domains(se, method = "GSEA",
+                         score_col = "log2WidthRatio__Control_vs_Treatment")
+```
+
+`rank_epi_genes()` collapses multiple domain links per gene with
+evidence-tier weights (`signed_weighted` by default; `best_domain`, `mean`,
+`max_abs` are alternatives) so a gene linked to many domains does not
+automatically outrank a gene with one strong link.
+
+## 7.3 Comparing phenotypes on one shared universe
+
+```{r enrichment-compare, eval=FALSE}
+se <- compare_epi_enrichment(se, sets = list(
+  Intensity = cls == "Intensity-Super",
+  Breadth   = cls == "Breadth-Super",
+  Dual      = cls == "Dual-Super"),
+  mark = "H3K27ac")
+plot_epi_enrichment(se)   # effect-size heatmap (log2 OR), counts annotated
+```
+
+All groups share one universe, one gene-link rule and one FDR method; the
+heatmap shows signed effect sizes rather than `-log10(FDR)`, because groups
+with more foreground genes have more power. A benchmark of the null
+calibration and background choice is available in
+`benchmark/enrichment-calibration.R`.
+
+## 7.4 Other databases (KEGG / Reactome)
+
+Only GO is implemented on purpose: KEGG / Reactome semantics (no ontology
+hierarchy, no `simplify()`, internet access for KEGG) differ enough that
+re-wrapping them adds surface without adding value. The domain-derived
+foreground and background are plain vectors, so the native clusterProfiler /
+ReactomePA functions can be used directly:
+
+```{r enrichment-other-db, eval=FALSE}
+genes <- get_domain_genes(se, domains = cls == "Breadth-Super",
+                          unique_genes = TRUE)
+universe <- get_domain_gene_universe(se, mark = "H3K27ac")
+
+clusterProfiler::enrichKEGG(gene = genes$gene_id, universe = universe,
+                            organism = "hsa", pvalueCutoff = 1)
+ReactomePA::enrichPathway(gene = genes$gene_id, universe = universe,
+                          organism = "human", pvalueCutoff = 1)
+```
+
+The gene-ID contract is unchanged: pass the same ID type as the annotation
+universe (`ENTREZID` for the built-in genomes), and keep the
+`get_domain_gene_universe()` background so the domain universe is respected.
 
 # Troubleshooting
 

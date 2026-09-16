@@ -14,7 +14,8 @@ compare_superdomain_classes(se, ref_group, target_group)
 \item{target_group}{Treatment condition.}
 }
 \value{
-se with \code{Combined_Relative_Class_Transition} column.
+\code{se} with a pair-specific column named
+\code{Combined_Class_Transition__relative__<ref>_vs_<target>}.
 }
 \description{
 Computes transitions of the combined taxonomy
@@ -34,5 +35,6 @@ se <- call_super_domains(se, feature = "Breadth",
 se <- combine_superdomain_calls(se, group_var = "Condition")
 se <- compare_superdomain_classes(se, ref_group = "Control",
                                   target_group = "Treatment")
-table(SummarizedExperiment::rowData(se)$Combined_Relative_Class_Transition)
+table(SummarizedExperiment::rowData(se)[[
+  "Combined_Class_Transition__relative__Control_vs_Treatment"]])
 }

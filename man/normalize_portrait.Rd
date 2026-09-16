@@ -4,7 +4,7 @@
 \alias{normalize_portrait}
 \title{Normalize Portrait Assays}
 \usage{
-normalize_portrait(se, method = "None", force_TMM = FALSE)
+normalize_portrait(se, method = "None")
 }
 \arguments{
 \item{se}{A SummarizedExperiment object from build_portrait_matrix().}
@@ -20,27 +20,27 @@ biological shifts.
 the analyzed domain set. WARNING: this assumes approximately
 conserved total signal across samples and may remove real global
 gains/losses (e.g. drug-induced chromatin loss).
-\item \code{"TMM"}: Trimmed Mean of M-values. Designed for count data;
-use \code{force_TMM = TRUE} for continuous BigWig signals.
 \item \code{"Quantile"}: Forces identical distributions across samples
-(uses limma). Not recommended for between-condition comparison.
+(uses limma). This is an explicitly warned sensitivity-analysis
+option, not a recommended between-condition normalization.
 }
+TMM is intentionally not offered because it is a count-composition method,
+whereas epiPortrait operates on continuous integrated BigWig signal.
 Row-wise Z-score scaling is not offered here: it is a display/clustering
 transform that would destroy the cross-domain magnitude ranking used for
 Super calling. Use \code{plot_portrait_pca()} or plotting layers for
 display-only scaling.}
-
-\item{force_TMM}{Logical. If \code{TRUE}, allows TMM normalization on continuous
-BigWig signals despite TMM being designed for count data. Default is \code{FALSE}.}
 }
 \value{
-A normalized SummarizedExperiment object.
+A SummarizedExperiment. The decision and, when applicable, scaling
+factors and before/after sample totals are stored in
+\code{metadata(se)$normalization}. A second post-hoc normalization of an
+object already marked as normalized is rejected.
 }
 \description{
-Normalizes the Intensity assay while preserving
-SignalDispersion in its native bp-scale units. Corrects the Intensity
-matrix to account for differences in sequencing depth or distribution
-across samples.
+Optionally normalizes the Intensity assay while preserving
+SignalDispersion in its native bp-scale units. The recommended workflow
+uses quantitatively comparable BigWigs and \code{method = "None"}.
 }
 \examples{
 data(example_se)

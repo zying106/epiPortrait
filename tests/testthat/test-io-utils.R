@@ -11,12 +11,13 @@ test_that("call_super_domains adds domain type columns", {
   expect_true("Intensity_Typical" %in% types)
 })
 
-test_that("call_super_domains works with different features", {
+test_that("call_super_domains works with assay and static features", {
   # SignalDispersion is a canonical assay feature
   se_sd <- call_super_domains(example_se, feature = "SignalDispersion", verbose = FALSE)
   expect_true("SignalDispersion_Domain_Type" %in% colnames(rowData(se_sd)))
   se_iw <- call_super_domains(example_se, feature = "IntervalWidth", verbose = FALSE)
   expect_true("IntervalWidth_Domain_Type" %in% colnames(rowData(se_iw)))
+  expect_identical(get_call_provenance(se_iw, "IntervalWidth")$mode, "static")
 })
 
 test_that("call_super_domains supports tangent (ROSE) method", {

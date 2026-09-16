@@ -1,3 +1,82 @@
+.validate_custom_features <- function(custom_features) {
+  if (is.null(custom_features)) return(list())
+  if (!is.list(custom_features)) {
+    stop("custom_features must be a named list of functions.", call. = FALSE)
+  }
+  if (length(custom_features) == 0L) return(custom_features)
+
+  feature_names <- names(custom_features)
+  if (is.null(feature_names) || anyNA(feature_names) ||
+      any(!nzchar(feature_names))) {
+    stop("Every custom feature must have a non-missing, non-empty name.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(feature_names)) {
+    duplicated_names <- unique(feature_names[duplicated(feature_names)])
+    stop("Custom feature names must be unique. Duplicated: ",
+         paste(duplicated_names, collapse = ", "), ".", call. = FALSE)
+  }
+  invalid_names <- feature_names[make.names(feature_names) != feature_names]
+  if (length(invalid_names) > 0L) {
+    stop("Custom feature names must be syntactically valid R names. Invalid: ",
+         paste(invalid_names, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # Include canonical assays, static/special features, and legacy aliases.
+  # Any collision would either overwrite a core assay during matrix assembly
+  # or make downstream feature resolution ambiguous.
+  reserved_names <- c(
+    "Intensity", "SignalDispersion", "NativeMaxPeakWidth",
+    "NativeOccupiedWidth", "NativePeakCount", "IntervalWidth", "Breadth",
+    "TotalIntensity", "Width"
+  )
+  collisions <- intersect(feature_names, reserved_names)
+  if (length(collisions) > 0L) {
+    stop("Custom feature names collide with reserved epiPortrait features: ",
+         paste(collisions, collapse = ", "), ".", call. = FALSE)
+  }
+
+  not_functions <- !vapply(custom_features, is.function, logical(1))
+  if (any(not_functions)) {
+    stop("Every custom feature must be a function. Invalid: ",
+         paste(feature_names[not_functions], collapse = ", "), ".",
+         call. = FALSE)
+  }
+  custom_features
+}
+
+
+.custom_feature_error <- function(message) {
+  condition <- structure(
+    list(message = message, call = NULL),
+    class = c("epiPortrait_custom_feature_error", "error", "condition")
+  )
+  stop(condition)
+}
+
+
+.evaluate_custom_feature <- function(fn, values, feature_name, domain_index) {
+  value <- tryCatch(
+    fn(values),
+    error = function(e) {
+      .custom_feature_error(sprintf(
+        "custom_features[['%s']] failed at domain index %d: %s",
+        feature_name, domain_index, conditionMessage(e)
+      ))
+    }
+  )
+  if (!is.numeric(value) || length(value) != 1L ||
+      is.nan(value) || is.infinite(value)) {
+    .custom_feature_error(sprintf(
+      paste0("custom_features[['%s']] must return one finite numeric value ",
+             "or NA_real_ at domain index %d."),
+      feature_name, domain_index
+    ))
+  }
+  as.numeric(value)
+}
+
+
 #' Extract and Build Multi-dimensional Portrait Matrix
 #'
 #' @description Extracts domain-level quantitative features from BigWig files
@@ -28,10 +107,14 @@
 #' BigWig + consensus peaks combination skip BigWig I/O entirely (default: NULL).
 #' The cache stores raw (un-sanitized) coverage so that negative_policy and
 #' custom features can change between runs without cache pollution.
-#' @param custom_features A named list of functions. Each function must accept a
-#' single \code{NumericList} (the coverage view for one peak) and return a single
-#' numeric value. Results are added as additional assays alongside the core
-#' dimensions (e.g., \code{list(Entropy = function(x) ...)}).
+#' @param custom_features A named list of functions. Each function receives the
+#' sanitized, non-missing per-base numeric coverage vector for one domain and
+#' must return one finite numeric value or \code{NA_real_}. Functions are called
+#' only for domains with at least three non-missing coverage positions; shorter
+#' domains receive \code{NA_real_}. Names must be unique, syntactically valid R
+#' names and must not collide with built-in feature names. Results are added as
+#' assays alongside the core dimensions (e.g.,
+#' \code{list(Entropy = function(x) ...)}).
 #' @param negative_policy Character. How to handle negative signal values in the
 #'   BigWig tracks:
 #'   \itemize{
@@ -207,17 +290,12 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
     param <- BiocParallel::SerialParam()
   }
 
-  # Validate custom features
-  use_custom <- !is.null(custom_features) && length(custom_features) > 0
+  # Validate custom features before any parallel work. In particular, prevent
+  # a user-defined assay from silently replacing a canonical assay during the
+  # mat_list assembly below.
+  custom_features <- .validate_custom_features(custom_features)
+  use_custom <- length(custom_features) > 0L
   if (use_custom) {
-    if (!is.list(custom_features) || is.null(names(custom_features))) {
-      stop("custom_features must be a named list of functions.")
-    }
-    for (nm in names(custom_features)) {
-      if (!is.function(custom_features[[nm]])) {
-        stop(sprintf("custom_features[['%s']] is not a function.", nm))
-      }
-    }
     message(sprintf("Including %d custom feature(s): %s",
                     length(custom_features),
                     paste(names(custom_features), collapse = ", ")))
@@ -401,7 +479,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
             cvg_k <- .import_bw_views(bw_path, consensus_peaks[k])[[1]]
             x_clean <- .sanitize_signal(as.numeric(cvg_k), negative_policy = negative_policy)
             x_clean <- x_clean[!is.na(x_clean)]
-            if (length(x_clean) >= 3) fn(x_clean) else NA_real_
+            if (length(x_clean) < 3L) return(NA_real_)
+            .evaluate_custom_feature(fn, x_clean, fn_name, k)
           }, numeric(1))
         }
       }
@@ -413,7 +492,8 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
              NegFraction = neg_frac),
         custom_result,
         list(NativePeaks = native_peaks,
-             Error = NULL))
+             Error = NULL,
+             ErrorType = NULL))
 
     }, error = function(e) {
       err_list <- list(I = rep(NA_real_, num_peaks),
@@ -428,7 +508,10 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
         }
       }
       c(err_list, list(NativePeaks = NULL,
-                       Error = paste("Sample", sample_sheet$SampleID[i], "-", e$message)))
+                       Error = paste("Sample", sample_sheet$SampleID[i], "-",
+                                     conditionMessage(e)),
+                       ErrorType = if (inherits(e, "epiPortrait_custom_feature_error"))
+                         "custom_feature" else "sample"))
     })
 
   }, BPPARAM = param)
@@ -440,6 +523,20 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
   error_flags <- !vapply(feature_list, function(x) is.null(x$Error), logical(1))
   if (any(error_flags)) {
     error_msgs <- vapply(feature_list[error_flags], function(x) x$Error, character(1))
+    error_types <- vapply(feature_list[error_flags], function(x) {
+      if (is.null(x$ErrorType)) "sample" else x$ErrorType
+    }, character(1))
+    # A custom feature is user code evaluated on every sample. Dropping only
+    # the samples on which it fails would change the experimental design and
+    # create an assay with data-dependent sample composition, so fail_action
+    # never converts these programming/contract errors into sample drops.
+    if (any(error_types == "custom_feature")) {
+      stop(sprintf(
+        "%d sample(s) failed during custom feature evaluation:\n  %s",
+        sum(error_types == "custom_feature"),
+        paste(error_msgs[error_types == "custom_feature"], collapse = "\n  ")
+      ), call. = FALSE)
+    }
     if (fail_action == "stop") {
       stop(sprintf(
         "%d sample(s) failed during BigWig import:\n  %s\n",
@@ -570,6 +667,13 @@ build_portrait_matrix <- function(sample_sheet, consensus_peaks,
       "peak_path may contain narrow peaks or broad enriched domains",
       "depending on the histone mark and upstream caller")
   )
+  # If the candidate domains were produced by stitch_epi_peaks(), carry that
+  # call forward: stitching defines the analysis-native geometry, so the
+  # distance and in/out domain counts must remain auditable on the object.
+  stitch_prov <- S4Vectors::metadata(consensus_peaks)$stitch_provenance
+  if (!is.null(stitch_prov)) {
+    S4Vectors::metadata(se)$stitch_provenance <- stitch_prov
+  }
   S4Vectors::metadata(se)$feature_definitions <- list(
     Intensity = list(
       definition = "Integrated BigWig signal within candidate domain",

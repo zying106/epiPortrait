@@ -51,8 +51,10 @@ validate_epiportrait_object <- function(se) {
       stop("colnames(se) must equal colData(se)$SampleID.")
     }
   }
-  # If a per-group replicate_call_matrix is stored, verify that its rows and
-  # row names match the domains and its columns are a subset of the samples.
+  # Stored matrices retain the full call universe when a SummarizedExperiment
+  # is subsequently reordered or subset by rows. Validate by stable IDs rather
+  # than physical position; sample removal still requires recalling because it
+  # changes group support summaries.
   calls <- S4Vectors::metadata(se)$superdomain_calls
   if (!is.null(calls)) {
     for (feat in names(calls)) {
@@ -61,12 +63,10 @@ validate_epiportrait_object <- function(se) {
       for (g in names(grps)) {
         m <- grps[[g]]$replicate_call_matrix
         if (is.null(m)) next
-        if (nrow(m) != nrow(se)) {
-          stop(sprintf("replicate_call_matrix for %s/%s has %d rows, expected %d.",
-                       feat, g, nrow(m), nrow(se)))
-        }
-        if (!identical(rownames(m), rownames(se))) {
-          stop(sprintf("replicate_call_matrix for %s/%s rownames must match domain IDs.",
+        if (is.null(rownames(m)) || anyNA(rownames(m)) ||
+            anyDuplicated(rownames(m)) ||
+            !all(rownames(se) %in% rownames(m))) {
+          stop(sprintf("replicate_call_matrix for %s/%s must contain unique current domain IDs.",
                        feat, g))
         }
         if (!all(colnames(m) %in% colnames(se))) {
@@ -74,6 +74,36 @@ validate_epiportrait_object <- function(se) {
                        feat, g))
         }
       }
+    }
+  }
+  # Orthogonal evidence is also ID-addressed so row/sample reordering is safe.
+  breadth_evidence <- S4Vectors::metadata(se)$breadth_domain_evidence
+  if (!is.null(breadth_evidence)) {
+    for (nm in c("evidence", "reason")) {
+      m <- breadth_evidence[[nm]]
+      if (!is.matrix(m)) {
+        stop("breadth_domain_evidence$", nm,
+             " must be a domain x sample matrix.")
+      }
+      if (is.null(rownames(m)) || is.null(colnames(m)) ||
+          anyNA(rownames(m)) || anyNA(colnames(m)) ||
+          anyDuplicated(rownames(m)) || anyDuplicated(colnames(m)) ||
+          !all(rownames(se) %in% rownames(m)) ||
+          !all(colnames(se) %in% colnames(m))) {
+        stop("breadth_domain_evidence$", nm,
+             " must be a domain x sample matrix containing unique ",
+             "current domain and sample IDs.", call. = FALSE)
+      }
+    }
+    if (!identical(dim(breadth_evidence$evidence),
+                   dim(breadth_evidence$reason)) ||
+        !identical(dimnames(breadth_evidence$evidence),
+                   dimnames(breadth_evidence$reason))) {
+      stop("Breadth evidence and reason matrices must have identical IDs.")
+    }
+    allowed <- c("Broad", "Typical", "PeakAbsent", "NoCall")
+    if (!all(unique(as.character(breadth_evidence$evidence)) %in% allowed)) {
+      stop("breadth_domain_evidence contains an unsupported evidence state.")
     }
   }
   invisible(TRUE)
@@ -353,6 +383,11 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
       cols <- unlist(lapply(mats_ordered, function(x) colnames(x$m)))
       combined <- do.call(cbind, lapply(mats_ordered, function(x) x$m))
       colnames(combined) <- cols
+      if (is.null(rownames(combined)) || anyDuplicated(rownames(combined)) ||
+          !all(rownames(se) %in% rownames(combined))) {
+        stop("Stored replicate calls are not aligned to current domain IDs.")
+      }
+      combined <- combined[rownames(se), , drop = FALSE]
       if (!is.null(group)) {
         g_samples <- rownames(meta)[meta[[calls[[feat]]$group_var]] == group]
         g_samples <- intersect(g_samples, colnames(combined))
@@ -418,14 +453,137 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
 }
 
 
+#' Extract Orthogonal Breadth Presence Evidence
+#'
+#' @description Returns the per-domain x per-replicate Breadth evidence stored
+#'   by \code{call_super_domains(feature = "Breadth")}. Evidence is orthogonal
+#'   to the canonical Breadth-Super call and has four states:
+#'   \itemize{
+#'     \item \code{Broad}: a uniquely assigned native peak exceeds the
+#'           replicate's width cutoff;
+#'     \item \code{Typical}: at least one uniquely assigned peak is present,
+#'           but none is broad;
+#'     \item \code{PeakAbsent}: the replicate-level width call is valid but no
+#'           eligible native peak overlaps the shared domain;
+#'     \item \code{NoCall}: the replicate is not callable, or overlapping
+#'           peaks cannot be assigned uniquely at the requested overlap
+#'           threshold.
+#'   }
+#'   \code{PeakAbsent} is an operational statement about the supplied peak
+#'   calls, not proof that the biological chromatin domain disappeared.
+#'   Evidence is matched by domain and sample IDs after subsetting or
+#'   reordering. Stored group summaries are not recalculated by this accessor;
+#'   rerun calling when changing the replicate composition of a group.
+#'
+#' @param se A SummarizedExperiment after Breadth calling.
+#' @param group Character or NULL. Optionally restrict samples to one condition
+#'   group using the \code{group_var} recorded in call provenance.
+#' @param type Character. For matrix output, return \code{"evidence"} or its
+#'   machine-readable \code{"reason"}. Ignored when \code{long = TRUE}.
+#' @param long Logical. Return a long data.frame containing both Evidence and
+#'   Reason instead of a matrix.
+#' @return A domain x sample matrix, or a long data.frame with columns
+#'   \code{Domain_ID}, \code{SampleID}, \code{Group}, \code{Evidence}, and
+#'   \code{Reason}.
+#' @import SummarizedExperiment
+#' @examples
+#' data(example_se)
+#' se <- call_super_domains(example_se, feature = "Breadth",
+#'                          mode = "per_group", group_var = "Condition",
+#'                          verbose = FALSE)
+#' head(get_breadth_evidence(se, group = "Control", long = TRUE))
+#' @export
+get_breadth_evidence <- function(se, group = NULL,
+                                 type = c("evidence", "reason"),
+                                 long = FALSE) {
+  type <- match.arg(type)
+  stored <- S4Vectors::metadata(se)$breadth_domain_evidence
+  if (is.null(stored) || is.null(stored$evidence) || is.null(stored$reason)) {
+    stop("No Breadth evidence found. Run call_super_domains(feature = ",
+         "'Breadth') first.")
+  }
+  evidence <- stored$evidence
+  reason <- stored$reason
+  valid_ids <- function(ids) {
+    !is.null(ids) && !anyNA(ids) && all(nzchar(ids)) &&
+      !anyDuplicated(ids)
+  }
+  if (!is.matrix(evidence) || !is.matrix(reason) ||
+      !identical(dim(evidence), dim(reason)) ||
+      !identical(dimnames(evidence), dimnames(reason)) ||
+      !valid_ids(rownames(evidence)) || !valid_ids(colnames(evidence)) ||
+      !valid_ids(rownames(se)) || !valid_ids(colnames(se)) ||
+      !all(rownames(se) %in% rownames(evidence)) ||
+      !all(colnames(se) %in% colnames(evidence))) {
+    stop("Stored Breadth evidence is not aligned to the object.")
+  }
+  evidence <- evidence[rownames(se), colnames(se), drop = FALSE]
+  reason <- reason[rownames(se), colnames(se), drop = FALSE]
+
+  meta <- as.data.frame(colData(se))
+  group_var <- stored$group_var
+  if (is.null(group_var)) {
+    prov <- get_call_provenance(se, "Breadth")
+    if (!is.null(prov$group_var)) group_var <- prov$group_var
+  }
+  keep <- seq_len(ncol(se))
+  if (!is.null(group)) {
+    if (length(group) != 1L || is.na(group)) {
+      stop("group must be NULL or one non-missing value.")
+    }
+    if (is.null(group_var) || !group_var %in% colnames(meta)) {
+      stop("No group variable was recorded for the Breadth evidence.")
+    }
+    keep <- which(as.character(meta[[group_var]]) == as.character(group))
+    if (length(keep) == 0L) {
+      stop("group '", group, "' not found in colData.")
+    }
+  }
+  evidence <- evidence[, keep, drop = FALSE]
+  reason <- reason[, keep, drop = FALSE]
+  if (!long) return(if (type == "evidence") evidence else reason)
+
+  group_values <- if (!is.null(group_var) && group_var %in% colnames(meta)) {
+    as.character(meta[[group_var]])
+  } else {
+    rep(NA_character_, ncol(se))
+  }
+  if (nrow(se) == 0L || length(keep) == 0L) {
+    return(data.frame(Domain_ID = character(), SampleID = character(),
+                      Group = character(), Evidence = character(),
+                      Reason = character()))
+  }
+  out <- do.call(rbind, lapply(seq_along(keep), function(j) {
+    i <- keep[j]
+    data.frame(
+      Domain_ID = rownames(se),
+      SampleID = colnames(se)[i],
+      Group = group_values[i],
+      Evidence = evidence[, j],
+      Reason = reason[, j],
+      stringsAsFactors = FALSE)
+  }))
+  rownames(out) <- NULL
+  out
+}
+
+
 #' Explain Why a Domain Call Is Uncertain
 #'
 #' @description For a per-group feature call, classifies the cause of each
 #'   \code{NA} / \code{Uncertain} group call so the ambiguity is auditable:
 #'   \itemize{
-#'     \item \code{no_native_peak_in_condition} (\code{Breadth}): the domain has
-#'           no native peak evidence in any replicate of the group — e.g. it is
-#'           condition-specific (present only in the other condition's universe).
+#'     \item \code{peak_absent_by_support_rule} (\code{Breadth}): enough
+#'           callable replicates have no eligible native peak overlapping the
+#'           domain. This is operational peak-call absence, not proof of
+#'           biological disappearance.
+#'     \item \code{mixed_peak_presence} (\code{Breadth}): callable replicates
+#'           disagree between peak presence and peak absence.
+#'     \item \code{overlap_without_unique_assignment} (\code{Breadth}): peaks
+#'           overlap the domain, but none can be assigned uniquely at the
+#'           selected overlap threshold.
+#'     \item \code{insufficient_assessable_replicates} (\code{Breadth}): too
+#'           few replicates distinguish peak presence from operational absence.
 #'     \item \code{no_valid_signal_in_any_replicate} (signal features): no
 #'           replicate produced a usable ranked distribution.
 #'     \item \code{insufficient_valid_replicates}: some, but fewer than
@@ -433,6 +591,10 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
 #'           with a majority rule).
 #'     \item \code{inflection_no_call_all_replicates}: every replicate's
 #'           inflection was unreliable (\code{no_call}).
+#'     \item \code{sharp_peak_regime} (\code{Breadth}): every replicate was
+#'           withheld by the \code{min_broad_width_bp} sharp-peak guard (all
+#'           eligible native peaks narrower than the floor), so no Broad
+#'           evidence exists by design; use \code{feature = "Intensity"}.
 #'   }
 #'   Domains whose group call is \emph{not} \code{NA} get \code{cause = NA}.
 #'   This reads stored provenance only and never re-computes calls.
@@ -444,7 +606,11 @@ get_replicate_calls <- function(se, feature = "Intensity", group = NULL,
 #' @param group_var Character or NULL. Column used for grouping; resolved from
 #'   stored provenance when NULL (default "Condition").
 #' @return A data.frame with columns \code{Domain_ID}, \code{Group_Call},
-#'   \code{N_Valid_Replicates}, \code{Min_Valid_Replicates}, \code{Cause}.
+#'   \code{N_Valid_Replicates}, \code{N_Assessable_Replicates},
+#'   \code{Min_Valid_Replicates}, and \code{Cause}. For Breadth,
+#'   \code{N_Valid_Replicates} counts Broad/Typical evidence, whereas
+#'   \code{N_Assessable_Replicates} also counts operational
+#'   \code{PeakAbsent} evidence.
 #' @import SummarizedExperiment
 #' @examples
 #' data(example_se)
@@ -510,20 +676,70 @@ get_uncertain_cause <- function(se, feature = "Breadth", group,
   all_no_call <- !is.null(rep_status) &&
     length(rep_status) > 0 && all(rep_status == "no_call", na.rm = TRUE)
 
+  # Sharp-peak guard provenance (Breadth only): a replicate withheld by
+  # min_broad_width_bp carries sharp_peak_regime = TRUE.
+  rep_sharp <- NULL
+  if (!is.null(prov$replicates)) {
+    rep_sharp <- vapply(colnames(mat), function(s) {
+      r <- prov$replicates[[s]]
+      !is.null(r) && isTRUE(r$sharp_peak_regime)
+    }, logical(1))
+  }
+  sharp_all <- !is.null(rep_sharp) && length(rep_sharp) > 0 &&
+    all(rep_sharp)
+
   is_breadth <- identical(feature, "Breadth") ||
     grepl("Breadth", as.character(feature))
 
   cause <- rep(NA_character_, length(grp_call))
+  n_assessable <- n_valid
   unc <- is.na(grp_call)
-  cause[unc & all_no_call] <- "inflection_no_call_all_replicates"
-  cause[unc & !all_no_call & n_valid == 0] <-
-    if (is_breadth) "no_native_peak_in_condition"
-    else "no_valid_signal_in_any_replicate"
-  cause[unc & !all_no_call & n_valid > 0] <- "insufficient_valid_replicates"
+  cause[unc & all_no_call] <- if (sharp_all) {
+    "sharp_peak_regime"
+  } else {
+    "inflection_no_call_all_replicates"
+  }
+  remaining <- unc & is.na(cause)
+  if (is_breadth) {
+    presence_col <- paste0("Breadth_PresenceStatus__", group)
+    presence_status <- if (presence_col %in% colnames(rd)) {
+      rd[[presence_col]]
+    } else {
+      rep(NA_character_, nrow(se))
+    }
+    cause[remaining & presence_status == "PeakAbsent"] <-
+      "peak_absent_by_support_rule"
+    cause[remaining & presence_status == "Mixed"] <- "mixed_peak_presence"
 
-  data.frame(Domain_ID = rownames(se), Group_Call = grp_call,
-             N_Valid_Replicates = n_valid, Min_Valid_Replicates = mvr,
-             Cause = cause, stringsAsFactors = FALSE)
+    evidence_mat <- get_breadth_evidence(
+      se, group = group, type = "evidence", long = FALSE)
+    reason_mat <- get_breadth_evidence(
+      se, group = group, type = "reason", long = FALSE)
+    n_assessable <- rowSums(evidence_mat != "NoCall")
+    overlap_without_unique <- apply(reason_mat, 1, function(x) {
+      any(x == "overlap_without_unique_assignment")
+    })
+    remaining <- unc & is.na(cause)
+    cause[remaining & overlap_without_unique] <-
+      "overlap_without_unique_assignment"
+    remaining <- unc & is.na(cause)
+    cause[remaining & n_valid > 0] <- "insufficient_valid_replicates"
+    cause[remaining & n_assessable < mvr] <-
+      "insufficient_assessable_replicates"
+  } else {
+    cause[remaining & n_valid == 0] <-
+      "no_valid_signal_in_any_replicate"
+    cause[remaining & n_valid > 0] <- "insufficient_valid_replicates"
+  }
+
+  data.frame(
+    Domain_ID = rownames(se),
+    Group_Call = grp_call,
+    N_Valid_Replicates = n_valid,
+    N_Assessable_Replicates = n_assessable,
+    Min_Valid_Replicates = mvr,
+    Cause = cause,
+    stringsAsFactors = FALSE)
 }
 
 
@@ -546,6 +762,8 @@ summarize_epiportrait_object <- function(se) {
     if (length(cc) > 0) classes <- table(rd[[cc[1]]])
   }
   trans <- grep("Transition", colnames(rd), value = TRUE)
+  enr <- S4Vectors::metadata(se)$enrichment
+  enr_cmp <- S4Vectors::metadata(se)$enrichment_comparison
   list(
     domains = nrow(se),
     samples = ncol(se),
@@ -554,7 +772,9 @@ summarize_epiportrait_object <- function(se) {
     transition_columns = trans,
     superdomain_provenance_features =
       names(if (is.null(S4Vectors::metadata(se)$superdomain_calls)) list()
-            else S4Vectors::metadata(se)$superdomain_calls)
+            else S4Vectors::metadata(se)$superdomain_calls),
+    enrichment_results = names(if (is.null(enr)) list() else enr),
+    enrichment_comparisons = names(if (is.null(enr_cmp)) list() else enr_cmp)
   )
 }
 
@@ -603,15 +823,37 @@ export_epiportrait_results <- function(se, outdir = "epiPortrait_results",
                        file.path(outdir, "transition_results.tsv"),
                        sep = "\t", quote = FALSE, row.names = FALSE)
   }
-  # Domain-gene annotation evidence: long-format links and provenance.
+  # Orthogonal per-domain x per-replicate Breadth presence evidence.
+  if (!is.null(S4Vectors::metadata(se)$breadth_domain_evidence)) {
+    utils::write.table(
+      get_breadth_evidence(se, long = TRUE),
+      file.path(outdir, "calls", "breadth_domain_evidence.tsv"),
+      sep = "\t", quote = FALSE, row.names = FALSE)
+  }
+  # Domain-gene annotation evidence: all three documented levels (per-domain
+  # summary, per-domain-gene pair, raw relationship detail) plus provenance.
   if (!is.null(S4Vectors::metadata(se)$domain_gene_links)) {
     dir.create(file.path(outdir, "annotation"), showWarnings = FALSE)
+    ann_summary <- S4Vectors::metadata(se)$annotation_summary
+    if (!is.null(ann_summary)) {
+      utils::write.table(ann_summary,
+                         file.path(outdir, "annotation",
+                                   "annotation_summary.tsv"),
+                         sep = "\t", quote = FALSE, row.names = FALSE)
+    }
+    ann_dedup <- S4Vectors::metadata(se)$domain_gene_links_dedup
+    if (!is.null(ann_dedup)) {
+      utils::write.table(ann_dedup,
+                         file.path(outdir, "annotation",
+                                   "domain_gene_links_dedup.tsv"),
+                         sep = "\t", quote = FALSE, row.names = FALSE)
+    }
     utils::write.table(S4Vectors::metadata(se)$domain_gene_links,
                        file.path(outdir, "annotation", "domain_gene_links.tsv"),
                        sep = "\t", quote = FALSE, row.names = FALSE)
     prov_lines <- c()
-    for (nm in c("annotation_provenance", "bedpe_provenance",
-                 "expression_provenance")) {
+    for (nm in c("annotation_provenance", "annotation_import_provenance",
+                 "bedpe_provenance", "expression_provenance")) {
       p <- S4Vectors::metadata(se)[[nm]]
       if (!is.null(p)) {
         prov_lines <- c(prov_lines, paste0("==", nm, "=="),

@@ -20,6 +20,7 @@ call_super_domains(
   n_bootstrap = NULL,
   seed = NULL,
   min_peak_overlap_fraction = 0.5,
+  min_broad_width_bp = 500,
   valid_chroms = NULL,
   verbose = TRUE
 )
@@ -43,8 +44,9 @@ keeps Breadth-Super calling decoupled from
 consensus construction).
 }
 The static genomic interval length is available as \code{"IntervalWidth"}
-(alias \code{"Width"}; read from rowData, constant across samples — use
-only for static broadness ranking, never for per-sample calls).}
+(alias \code{"Width"}; read from rowData). It is ranked once as a single
+static vector: replicate support is not computed, and
+\code{mode = "per_group"} / \code{"per_sample"} are rejected.}
 
 \item{mode}{Character. "global_consensus" (default), "per_group", or
 "per_sample". The alias "consensus" is also accepted.}
@@ -146,6 +148,20 @@ at most ONE shared domain (unique assignment by maximum overlap); peaks
 not reaching the threshold are \code{Unmapped}, and tied maxima are
 \code{Ambiguous}. Prevents edge-overlap double counting of Broad evidence.}
 
+\item{min_broad_width_bp}{Numeric or NULL. Only used when
+\code{feature = "Breadth"}. Absolute sanity floor for the native-peak
+width regime (default 500 bp). If a replicate's WIDEST eligible native
+peak is narrower than this floor, the whole width distribution is in the
+sharp-peak regime: no peak can meaningfully be called "broad", so the
+replicate provides NO Broad evidence (\code{no_call} -> \code{Uncertain},
+never a silent Typical/Broad relabel) and a warning names the affected
+replicates. This is a data-domain guard, not a quality gate: it is applied
+on both the data-driven inflection path and the explicit
+\code{quantile_cutoff} path. Set to \code{NULL} (or 0) to disable it when
+the analysis is intentionally about narrow-peak width variation, or for
+toy/synthetic width distributions used in unit tests. Sharp-peak data
+(e.g. TF ChIP-seq) should use \code{feature = "Intensity"} instead.}
+
 \item{valid_chroms}{Character or NULL. Only used when
 \code{feature = "Breadth"}. Optional vector of allowed chromosomes for the
 genome-wide eligible native peak set (e.g. \code{c("chr1", ..., "chr22")}
@@ -159,7 +175,11 @@ A SummarizedExperiment with rowData columns for each call.
 Call provenance (feature, method, requested/used log_transform, cutoff,
 cutoff_stability_interval, bootstrap_success_rate, quality_score,
 call_status, n_super) is stored in
-\code{metadata(se)$superdomain_calls}.
+\code{metadata(se)$superdomain_calls}. Breadth calls additionally store an
+orthogonal per-domain x per-replicate evidence layer in
+\code{metadata(se)$breadth_domain_evidence}. Its states are
+\code{Broad}, \code{Typical}, \code{PeakAbsent}, and \code{NoCall}; it
+does not alter the canonical Breadth or combined taxonomy.
 }
 \description{
 Identifies super-domains by ranking domains on a feature and

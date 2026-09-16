@@ -62,7 +62,8 @@ test_that("transition_matrix_per_sample compares per-sample call columns", {
   expect_equal(tr[3], "Breadth_Super_Element_to_Breadth_Typical")
   # domain 4: Typical -> NA (Uncertain propagation)
   expect_equal(tr[4], "Uncertain")
-  expect_false(is.null(metadata(se)$transitions[["t0_vs_t1"]]$counts))
+  expect_false(is.null(
+    metadata(se)$transitions[["sample__Breadth__t0_vs_t1"]]$counts))
   # auto timepoint discovery from column suffixes
   se2 <- make_cross_se("A")
   se2 <- transition_matrix_per_sample(se2, feature = "Breadth",
@@ -87,7 +88,8 @@ test_that("transition_matrix_per_sample gives all ordered pairs when ref=NULL", 
                                      verbose = FALSE)
   cols <- grep("SampleTransition", colnames(rowData(se)), value = TRUE)
   expect_equal(length(cols), 3)  # t0-t1, t0-t2, t1-t2
-  expect_true(all(c("t0_vs_t1", "t0_vs_t2", "t1_vs_t2") %in%
+  expect_true(all(paste0("sample__Breadth__",
+                         c("t0_vs_t1", "t0_vs_t2", "t1_vs_t2")) %in%
                     names(metadata(se)$transitions)))
   expect_error(transition_matrix_per_sample(se, feature = "Breadth",
                                             ref = "nope",

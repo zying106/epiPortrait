@@ -43,14 +43,17 @@ make_anno_se <- function() {
   se
 }
 
-test_that("annotate_epi_domains adds 7 rowData columns + links", {
+test_that("annotate_epi_domains adds the documented rowData columns + links", {
   txdb <- make_tiny_txdb()
   se <- make_anno_se()
   se <- annotate_epi_domains(se, genome = txdb)
   expect_true(all(c("primary_genomic_context", "nearest_tss_gene_id",
                     "nearest_tss_gene_symbol", "nearest_tss_distance_bp",
                     "promoter_overlap_gene_count", "gene_body_overlap_gene_count",
-                    "fully_contained_gene_count") %in% colnames(rowData(se))))
+                    "fully_contained_gene_count", "n_bedpe_contact_gene",
+                    "bedpe_contact_score", "bedpe_contact_score_max",
+                    "bedpe_contact_score_mean", "bedpe_contact_score_n",
+                    "top_candidate_gene_symbol") %in% colnames(rowData(se))))
   expect_false(is.null(S4Vectors::metadata(se)$domain_gene_links))
   expect_false(is.null(S4Vectors::metadata(se)$annotation_provenance))
   # every domain must have a primary context
@@ -309,6 +312,15 @@ test_that("BEDPE support count uses unique records (P1-4)", {
               label = "at least one dedup pair must have bedpe evidence")
   expect_true(all(bedpe_rows$bedpe_support_count == 1L),
               label = "single BEDPE record counted once per pair (P1-4)")
+  # _n stays the contact count even without a score column; the score columns
+  # are NA (evidence exists, no usable score) rather than 0 or a count.
+  expect_true(all(bedpe_rows$bedpe_contact_score_n == 1L))
+  expect_true(all(is.na(bedpe_rows$bedpe_contact_score)))
+  expect_true(all(is.na(bedpe_rows$bedpe_contact_score_max)))
+  expect_true(all(is.na(bedpe_rows$bedpe_contact_score_mean)))
+  # rank_by = "bedpe_score" must cope with unscored contacts (falls back to tier)
+  cand <- get_domain_genes(se, rank_by = "bedpe_score")
+  expect_true(nrow(cand) > 0)
   # verify raw links contain bedpe evidence
   links <- S4Vectors::metadata(se)$domain_gene_links
   expect_true(any(links$evidence_source == "bedpe"),
@@ -375,6 +387,88 @@ test_that("partial seqlevels -> warning, matched domains annotated (P0-2)", {
   expect_warning(se2 <- annotate_epi_domains(se, genome = txdb), "present in the TxDb")
   expect_true(!is.na(rowData(se2)$nearest_tss_gene_id[1]))
   expect_true(is.na(rowData(se2)$nearest_tss_gene_id[2]))
+})
+
+test_that("zero-link annotation stores typed empty tables instead of crashing", {
+  # Domains on a seqlevel that is IN the TxDb seqlevels but carries no genes:
+  # the seqlevel check passes, yet no linear (or BEDPE) evidence can exist.
+  # Regression: links$contact_score <- NA_real_ on a 0x0 data.frame used to
+  # error with "replacement has 1 row, data has 0". chr2 is kept in the seqinfo
+  # via a transcript-only entry (no gene), so seqlevels(txdb) includes it while
+  # genes(txdb) does not.
+  skip_if_not_installed("txdbmaker")
+  gr <- GenomicRanges::GRanges(
+    c("chr1", "chr1", "chr2"),
+    IRanges::IRanges(c(1000, 1000, 5000), c(3000, 3000, 6000)),
+    strand = "+")
+  S4Vectors::mcols(gr)$type <- c("gene", "transcript", "transcript")
+  S4Vectors::mcols(gr)$ID <- c("gene1", "gene1_tx1", "tx_chr2")
+  S4Vectors::mcols(gr)$Parent <- c(NA_character_, "gene1", NA_character_)
+  txdb <- suppressWarnings(txdbmaker::makeTxDbFromGRanges(gr))
+  dom <- GenomicRanges::GRanges(
+    "chr2", IRanges::IRanges(c(100, 5000), width = 500),
+    seqinfo = GenomeInfoDb::Seqinfo(c("chr1", "chr2"), c(1000000, 1000000)))
+  se <- SummarizedExperiment::SummarizedExperiment(
+    assays = list(Intensity = matrix(1, 2, 2),
+                  SignalDispersion = matrix(1, 2, 2)),
+    rowRanges = dom)
+  rownames(se) <- c("epiDomain_000001", "epiDomain_000002")
+  colnames(se) <- c("C1", "T1")
+  colData(se)$Condition <- c("Control", "Treatment")
+  se2 <- annotate_epi_domains(se, genome = txdb)
+  links <- S4Vectors::metadata(se2)$domain_gene_links
+  dedup <- S4Vectors::metadata(se2)$domain_gene_links_dedup
+  summary_tbl <- S4Vectors::metadata(se2)$annotation_summary
+  expect_equal(nrow(links), 0L)
+  expect_equal(nrow(dedup), 0L)
+  expect_true(all(c("domain_id", "gene_id", "relation_type", "contact_score") %in%
+                    colnames(links)))
+  expect_equal(nrow(summary_tbl), 2L)
+  expect_true(all(is.na(summary_tbl$nearest_tss_gene_symbol)))
+  # get_domain_genes() reports the empty evidence explicitly (no silent table)
+  expect_error(get_domain_genes(se2), "No domain-gene links")
+})
+
+test_that("export_epiportrait_results writes all three annotation levels", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  se <- annotate_epi_domains(se, genome = txdb)
+  out <- export_epiportrait_results(se, outdir = tempfile("epi_ann_export"),
+                                    group_var = "Condition")
+  expect_true(file.exists(file.path(out, "annotation",
+                                    "annotation_summary.tsv")))
+  expect_true(file.exists(file.path(out, "annotation",
+                                    "domain_gene_links_dedup.tsv")))
+  expect_true(file.exists(file.path(out, "annotation",
+                                    "domain_gene_links.tsv")))
+})
+
+test_that("pair-level nearest_tss_distance_bp keeps the signed convention", {
+  # Domain 100-900 lies UPSTREAM of gene1's + strand TSS (1000) -> the signed
+  # distance must be negative in rowData, annotation_summary, the dedup table
+  # and get_domain_genes() alike (the column name means one thing everywhere).
+  txdb <- make_tiny_txdb()
+  dom <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(100, 900),
+    seqinfo = GenomeInfoDb::Seqinfo("chr1", 1000000))
+  se <- SummarizedExperiment::SummarizedExperiment(
+    assays = list(Intensity = matrix(1, 1, 2),
+                  SignalDispersion = matrix(1, 1, 2)),
+    rowRanges = dom)
+  rownames(se) <- "epiDomain_000001"
+  colnames(se) <- c("C1", "T1")
+  colData(se)$Condition <- c("Control", "Treatment")
+  se2 <- annotate_epi_domains(se, genome = txdb)
+  expect_lt(rowData(se2)$nearest_tss_distance_bp[1], 0)
+  expect_lt(S4Vectors::metadata(se2)$annotation_summary$nearest_tss_distance_bp[1], 0)
+  dedup <- S4Vectors::metadata(se2)$domain_gene_links_dedup
+  d1 <- dedup[dedup$gene_id == "gene1" & grepl("nearest_tss", dedup$relation_types), ]
+  expect_true(nrow(d1) >= 1)
+  expect_lt(d1$nearest_tss_distance_bp[1], 0)
+  gd <- get_domain_genes(se2)
+  g1 <- gd[gd$gene_id == "gene1" & grepl("nearest_tss", gd$relation_types), ]
+  expect_true(nrow(g1) >= 1)
+  expect_lt(g1$nearest_tss_distance_bp[1], 0)
 })
 
 test_that("wide RNA with unmatched sample columns -> error (P1-2)", {
@@ -622,4 +716,34 @@ test_that("BEDPE score multi-stats (sum/max/mean/n) and min overlap", {
   expect_equal(n_contact_default, n_contact_1bp)
   expect_identical(S4Vectors::metadata(a1)$bedpe_provenance$min_anchor_overlap_bp, 100)
   expect_identical(S4Vectors::metadata(a10)$bedpe_provenance$min_anchor_overlap_bp, 1)
+})
+
+# ---- single source of truth for native vs external annotation views ---------
+test_that("native annotation views are exactly the shared rebuild", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  bedpe_df <- data.frame(
+    chrom1 = "chr1", start1 = 1499, end1 = 2500,
+    chrom2 = "chr1", start2 = 59999, end2 = 61000,
+    score = c(2, 10), stringsAsFactors = FALSE)
+  se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df,
+                             bedpe_score_col = "score")
+  links <- S4Vectors::metadata(se)$domain_gene_links
+  dedup <- S4Vectors::metadata(se)$domain_gene_links_dedup
+  summary_tbl <- S4Vectors::metadata(se)$annotation_summary
+
+  # Native raw links carry the same provenance column the importer uses.
+  expect_true("annotation_source" %in% colnames(links))
+  expect_setequal(unique(links$annotation_source),
+                  c("epiPortrait:native", "epiPortrait:BEDPE"))
+  expect_true("annotation_sources" %in% colnames(dedup))
+
+  # Running the shared builder on the SAME links is a no-op. This is the
+  # regression guard: if native ever stops using the shared builder, or the
+  # two paths diverge, these three equality checks fail.
+  se2 <- epiPortrait:::.rebuild_annotation_views(
+    se, links, nearest_tss_cutoff_bp = 10000)
+  expect_equal(rowData(se2), rowData(se))
+  expect_equal(S4Vectors::metadata(se2)$domain_gene_links_dedup, dedup)
+  expect_equal(S4Vectors::metadata(se2)$annotation_summary, summary_tbl)
 })

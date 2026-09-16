@@ -175,7 +175,10 @@ epiPortrait is **not** designed to:
 - replace DiffBind / csaw differential testing;
 - infer causal enhancer–gene regulation;
 - call chromatin loops;
-- perform RNA-seq differential expression.
+- perform RNA-seq differential expression;
+- treat sharp/focal peaks (e.g. TF ChIP-seq) as broad domains: the `Breadth`
+  axis is protected by the `min_broad_width_bp` sharp-peak guard, and
+  sharp-peak data should use the `Intensity` axis only.
 
 For quantitative claims, the input BigWigs must be comparable (CPM / RPGC /
 spike-in normalization). Native breadth calls depend on the upstream peak /
@@ -303,12 +306,21 @@ se <- build_portrait_matrix(
 se <- normalize_portrait(se, method = "None")
 ```
 
+`normalize_portrait()` intentionally does not offer count-based TMM for
+continuous BigWig signal. `TotalSignal` and Quantile normalization are
+explicitly warned alternatives for sensitivity analysis; applied methods,
+assumptions, factors and sample totals are recorded in
+`metadata(se)$normalization`, and repeated post-hoc normalization is rejected.
+
 **Key Parameters:**
 
 - **`workers`**: Parallel threads via `BiocParallel`.
 - **`on_disk`**: Store assays as HDF5 for mammalian-scale processing.
 - **`cache_dir`**: Cache per-sample coverage views as RDS to skip BigWig I/O.
 - **`custom_features`**: Named list of functions for user-defined dimensions.
+  Each function receives one domain's sanitized per-base numeric coverage and
+  returns one finite numeric value or `NA_real_`; names must be unique and must
+  not collide with built-in features.
 - **`negative_policy`**: `"error"` (default), `"clip_zero"`, or `"allow"` for
   negative signal handling.
 
@@ -373,7 +385,8 @@ For a single-condition study (no `Condition` grouping), the default
 - **`feature`**: canonical Super axes — `"Intensity"` → Super-Element,
   `"Breadth"` → peak-level Breadth-Super. Secondary/exploratory (not canonical
   Super axes): `"SignalDispersion"` (within-domain architecture descriptor),
-  `"IntervalWidth"` (static shared coordinate frame).
+  `"IntervalWidth"` (one static ranking of the shared coordinate frame; no
+  replicate support and no `per_group` / `per_sample` mode).
 - **`method`**: `"elbow"` (default, max perpendicular distance) or `"tangent"`
   (ROSE-inspired tangent-optimization inflection; Whyte et al., 2013 *Cell*).
   Note that the tangent implementation is a geometric variant, not a bit-exact
@@ -390,7 +403,16 @@ For a single-condition study (no `Condition` grouping), the default
   candidate domains; Breadth: per-replicate native PeakWidth distribution).
   A resampling-stability diagnostic, not a classical CI.
 - **Breadth only**: `min_peak_overlap_fraction` (default `0.5`, unique
-  peak-to-domain mapping) and `valid_chroms` (allowed chromosomes).
+  peak-to-domain mapping), `min_broad_width_bp` (default `500`; sharp-peak
+  guard, see below) and `valid_chroms` (allowed chromosomes).
+- **Sharp-peak guard (`min_broad_width_bp`)**: if a replicate's widest
+  eligible native peak is narrower than this floor, the width distribution is
+  in the sharp-peak regime and the replicate provides no Broad evidence
+  (`Uncertain`, with a warning) rather than confidently labelling ~200 bp
+  peaks as "broad". Applied to both the inflection and `quantile_cutoff`
+  paths; set `min_broad_width_bp = NULL` to disable. Sharp-peak data (TF
+  ChIP-seq, narrow marks) should use `feature = "Intensity"` only and skip
+  `Breadth` and stitching.
 
 **Optional H3K27ac benchmark against ROSE.** For a head-to-head comparison
 with the ROSE super-enhancer pipeline (Whyte et al., 2013), use
@@ -403,6 +425,25 @@ agreement with ROSE.
 native PeakWidth distribution is cut by an elbow/inflection; broad peaks are
 mapped to the shared domains by unique assignment and aggregated across
 replicates. It is decoupled from consensus construction.
+
+Breadth calling also records peak presence independently of the canonical
+Super/Typical taxonomy:
+
+``` r
+evidence <- get_breadth_evidence(se, group = "Control", long = TRUE)
+head(evidence)
+```
+
+The replicate states are `Broad`, `Typical`, `PeakAbsent`, and `NoCall`.
+`PeakAbsent` requires a valid replicate-level width call and no eligible native
+peak overlapping the domain. A domain touched only by ambiguous or
+threshold-failing peaks remains `NoCall`. Therefore `PeakAbsent` means absence
+from the supplied peak calls under the stated pipeline—not biological proof
+that the chromatin domain disappeared. Group summaries are stored as
+`Breadth_PresenceStatus__<group>`, `Breadth_PresenceFraction__<group>`,
+`Breadth_AbsenceFraction__<group>`, and
+`Breadth_N_Assessable__<group>`; fractions use all replicates as the
+denominator, so technical no-calls cannot inflate evidence.
 
 ### Combined taxonomy
 
@@ -426,7 +467,8 @@ se <- call_super_domains(se, feature = "Intensity",
                          mode = "per_group", group_var = "Condition")
 se <- compare_superdomains(se, group_var = "Condition",
                            ref_group = "Control", target_group = "Treatment")
-table(rowData(se)$Intensity_Relative_Transition)
+table(rowData(se)[[
+  "Intensity_Transition__relative__Control_vs_Treatment"]])
 ```
 
 The default `cutoff_scope = "relative"` calls each group with its own cutoff;
@@ -435,7 +477,9 @@ express a *relative rank-state* change and must **not** be interpreted as
 absolute signal gain/loss. Use `cutoff_scope = "reference"` or `"pooled"` for
 a common-scale `Gain` / `Loss` label when the BigWigs are quantitatively
 comparable. These labels still do not establish an absolute biochemical
-change. `Uncertain` is assigned when a group call was not reliable.
+change. `Uncertain` is assigned when a group call was not reliable. Pair and
+cutoff scope are encoded in every canonical transition column; no mutable
+latest-result alias is created.
 
 ### Module 4: Annotation & Visualization
 
@@ -448,6 +492,21 @@ candidates <- get_domain_genes(se, group = "Control")
 head(metadata(se)$annotation_summary)
 head(metadata(se)$domain_gene_links_dedup)
 head(metadata(se)$domain_gene_links)
+
+# External annotation tools are supported through a standard long table.
+# Convert software-specific labels before import; epiPortrait does not guess
+# ABC or loop-workflow output schemas.
+external_links <- data.frame(
+  domain_id = rownames(se)[1],
+  gene_id = "1017",
+  gene_symbol = "CDK2",
+  relation_type = "bedpe_promoter_contact",
+  bedpe_record_id = "loop_0001",
+  external_relation = "ABC enhancer-gene link",
+  abc_score = 0.037
+)
+se_external <- import_domain_annotations(
+  se, external_links, source = "ABC_loop_links", mode = "append")
 
 # Hockey-stick ranking plot
 se <- call_super_domains(se, feature = "Intensity")
@@ -471,9 +530,11 @@ continuous signal:
 se <- analyze_differential_domains(
   se, feature = "Intensity",
   ref_group = "Control", target_group = "Treatment")
-table(rowData(se)$Intensity_DiffStatus)
+table(rowData(se)[[
+  "Intensity_Diff__Control_vs_Treatment__DiffStatus"]])
 
-plot_differential_volcano(se, feature = "Intensity", label_n = 10)
+plot_differential_volcano(
+  se, feature = "Intensity", result_name = "Control_vs_Treatment", label_n = 10)
 ```
 
 For a paired or blocked design, include the blocking variable in the model and
@@ -490,6 +551,52 @@ This is a limma analysis of normalized continuous track values, not a
 fragment-count model. Use per-domain counts with DiffBind, csaw, edgeR, or
 DESeq2 when count-based inference is required. Simple two-group models need
 replication to estimate residual variance.
+
+### Module 5: Functional Interpretation (GO ORA / GSEA)
+
+Links domain phenotypes and remodeling modes to biological programs. The
+background is always the genes linked to the object's own domains
+(`get_domain_gene_universe()`), never all organism genes; every tested term
+gets an explicit log2 odds ratio (ORA) or NES (GSEA) so groups of different
+sizes remain comparable. Requires `clusterProfiler`, `GO.db` and an OrgDb
+(all in `Suggests`).
+
+``` r
+# Discrete phenotype: which programs characterize super domains?
+se <- call_super_domains(se, feature = "Intensity", verbose = FALSE)
+sel <- rowData(se)$Intensity_Domain_Type == "Intensity_Super_Element"
+se <- enrich_epi_domains(se, domains = sel, mark = "H3K27ac")
+get_epi_enrichment(se)
+
+# Continuous remodeling: rank genes by the statistic, do not cut a phenotype.
+se <- analyze_differential_domains(se, ref_group = "Control",
+                                   target_group = "Treatment")
+se <- enrich_epi_domains(
+  se, method = "GSEA",
+  score_col = "Intensity_Diff__Control_vs_Treatment__t")
+get_epi_enrichment(se)
+
+# Compare phenotypes on ONE shared universe (log2 OR +/- 95% CI)
+se <- compare_epi_enrichment(se, sets = list(
+  Super   = sel,
+  Typical = rowData(se)$Intensity_Domain_Type == "Intensity_Typical"))
+plot_epi_enrichment(se)
+```
+
+`as_enrich_result(res)` returns the stored clusterProfiler object, so the
+whole enrichplot ecosystem (dotplot, cnetplot, emapplot) works without
+reimplementation; `plot_epi_enrichment()` adds only the comparative
+effect-size heatmap.
+
+Only GO is wrapped on purpose. For KEGG / Reactome, pass the same domain-derived
+foreground and background to the native functions:
+
+``` r
+genes <- get_domain_genes(se, domains = sel, unique_genes = TRUE)
+universe <- get_domain_gene_universe(se, mark = "H3K27ac")
+clusterProfiler::enrichKEGG(gene = genes$gene_id, universe = universe,
+                            organism = "hsa", pvalueCutoff = 1)
+```
 
 ------------------------------------------------------------------------
 
