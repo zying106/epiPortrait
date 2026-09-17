@@ -500,7 +500,8 @@ test_that("Breadth-Super stores peak-level provenance", {
   expect_equal(prov$calling_paradigm,
                "peak-level native PeakWidth, unique mapping, replicate aggregation")
   expect_false(is.null(prov$min_peak_overlap_fraction))
-  expect_equal(prov$min_broad_width_bp, 500)
+  # min_broad_width_bp now defaults to NULL (sharp-peak guard disabled)
+  expect_null(prov$min_broad_width_bp)
   expect_equal(prov$n_sharp_peak_replicates, 0L)
   expect_false(is.null(S4Vectors::metadata(se)$breadth_peak_calls))
   expect_false(is.null(S4Vectors::metadata(se)$breadth_peak_mapping))
@@ -590,7 +591,7 @@ test_that("Breadth withholds evidence when native widths are in the sharp regime
   se <- .make_sharp_peak_se()
   expect_warning(
     se <- call_super_domains(se, feature = "Breadth", mode = "per_sample",
-                             verbose = FALSE),
+                             min_broad_width_bp = 500, verbose = FALSE),
     "sharp-peak")
   prov <- S4Vectors::metadata(se)$superdomain_calls$Breadth
   expect_equal(prov$n_sharp_peak_replicates, 2L)
@@ -616,20 +617,28 @@ test_that("sharp-peak guard also applies to the quantile path", {
   se <- .make_sharp_peak_se()
   expect_warning(
     se <- call_super_domains(se, feature = "Breadth", mode = "per_sample",
-                             quantile_cutoff = 0.9, verbose = FALSE),
+                             quantile_cutoff = 0.9, min_broad_width_bp = 500,
+                             verbose = FALSE),
     "sharp-peak")
   expect_true(all(is.na(rowData(se)$Breadth_Call__S1)))
 })
 
-test_that("min_broad_width_bp accepts NULL and rejects invalid values", {
+test_that("min_broad_width_bp defaults to NULL and rejects invalid values", {
   expect_error(
     call_super_domains(example_se, feature = "Breadth",
                        min_broad_width_bp = -1),
     "min_broad_width_bp")
-  # example_se carries ~12 kb native peaks in each condition -> guard passes
+  # Default NULL disables the guard and is recorded as such.
+  se_default <- call_super_domains(example_se, feature = "Breadth",
+                                   mode = "per_sample", verbose = FALSE)
+  expect_null(
+    S4Vectors::metadata(se_default)$superdomain_calls$Breadth$min_broad_width_bp)
+  # example_se carries ~12 kb native peaks in each condition -> explicit guard passes
   se <- call_super_domains(example_se, feature = "Breadth",
-                           mode = "per_sample", verbose = FALSE)
+                           mode = "per_sample", min_broad_width_bp = 500,
+                           verbose = FALSE)
   prov <- S4Vectors::metadata(se)$superdomain_calls$Breadth
+  expect_equal(prov$min_broad_width_bp, 500)
   expect_equal(prov$n_sharp_peak_replicates, 0L)
 })
 

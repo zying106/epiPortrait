@@ -4,9 +4,14 @@
   a continuous right-tail-prominence descriptor rather than being filtered by
   an uncalibrated default threshold. `min_quality = NULL` is the new default;
   an explicit numeric value retains strict/legacy filtering. Degenerate input,
-  absent right-tail geometry, endpoint cutoffs, and the Breadth-specific
-  sharp-peak guard still produce auditable `no_call` results. Replicate
-  provenance now records stable `reason_code` values.
+  absent right-tail geometry and endpoint cutoffs still produce auditable
+  `no_call` results. Replicate provenance now records stable `reason_code`
+  values.
+* `call_super_domains(min_broad_width_bp =)` now defaults to `NULL`, so the
+  Breadth sharp-peak guard is opt-in; supply a numeric bp floor (e.g. `500`) to
+  enable it. This keeps the default caller from abstaining on deliberately
+  narrow-peak width distributions while retaining the guard as an explicit
+  data-domain protection.
 
 * `gsea_epi_genes()` no longer passes `by = "fgsea"` to
   `clusterProfiler::gseGO()`. Newer clusterProfiler releases removed that

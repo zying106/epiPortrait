@@ -176,9 +176,9 @@ epiPortrait is **not** designed to:
 - infer causal enhancer–gene regulation;
 - call chromatin loops;
 - perform RNA-seq differential expression;
-- treat sharp/focal peaks (e.g. TF ChIP-seq) as broad domains: the `Breadth`
-  axis is protected by the `min_broad_width_bp` sharp-peak guard, and
-  sharp-peak data should use the `Intensity` axis only.
+- treat sharp/focal peaks (e.g. TF ChIP-seq) as broad domains: enable the
+  opt-in `min_broad_width_bp` sharp-peak guard for such data, and otherwise
+  use the `Intensity` axis only.
 
 For quantitative claims, the input BigWigs must be comparable (CPM / RPGC /
 spike-in normalization). Native breadth calls depend on the upstream peak /
@@ -403,16 +403,18 @@ For a single-condition study (no `Condition` grouping), the default
   candidate domains; Breadth: per-replicate native PeakWidth distribution).
   A resampling-stability diagnostic, not a classical CI.
 - **Breadth only**: `min_peak_overlap_fraction` (default `0.5`, unique
-  peak-to-domain mapping), `min_broad_width_bp` (default `500`; sharp-peak
-  guard, see below) and `valid_chroms` (allowed chromosomes).
-- **Sharp-peak guard (`min_broad_width_bp`)**: if a replicate's widest
-  eligible native peak is narrower than this floor, the width distribution is
-  in the sharp-peak regime and the replicate provides no Broad evidence
-  (`Uncertain`, with a warning) rather than confidently labelling ~200 bp
-  peaks as "broad". Applied to both the inflection and `quantile_cutoff`
-  paths; set `min_broad_width_bp = NULL` to disable. Sharp-peak data (TF
-  ChIP-seq, narrow marks) should use `feature = "Intensity"` only and skip
-  `Breadth` and stitching.
+  peak-to-domain mapping), `min_broad_width_bp` (default `NULL`, guard
+  disabled; set a numeric bp floor to enable the sharp-peak guard below) and
+  `valid_chroms` (allowed chromosomes).
+- **Sharp-peak guard (`min_broad_width_bp`)**: opt-in. When a numeric floor is
+  supplied and a replicate's widest eligible native peak is narrower than it,
+  the width distribution is in the sharp-peak regime and the replicate provides
+  no Broad evidence (`Uncertain`, with a warning) rather than confidently
+  labelling ~200 bp peaks as "broad". Applied to both the inflection and
+  `quantile_cutoff` paths; the default `NULL` disables it, and
+  `min_broad_width_bp = 0` disables it as well. Sharp-peak data (TF ChIP-seq,
+  narrow marks) should use `feature = "Intensity"` only and skip `Breadth` and
+  stitching.
 
 **Optional H3K27ac benchmark against ROSE.** For a head-to-head comparison
 with the ROSE super-enhancer pipeline (Whyte et al., 2013), use

@@ -145,18 +145,17 @@
 #'   not reaching the threshold are \code{Unmapped}, and tied maxima are
 #'   \code{Ambiguous}. Prevents edge-overlap double counting of Broad evidence.
 #' @param min_broad_width_bp Numeric or NULL. Only used when
-#'   \code{feature = "Breadth"}. Absolute sanity floor for the native-peak
-#'   width regime (default 500 bp). If a replicate's WIDEST eligible native
-#'   peak is narrower than this floor, the whole width distribution is in the
-#'   sharp-peak regime: no peak can meaningfully be called "broad", so the
-#'   replicate provides NO Broad evidence (\code{no_call} -> \code{Uncertain},
-#'   never a silent Typical/Broad relabel) and a warning names the affected
-#'   replicates. This is a data-domain guard, not a quality gate: it is applied
-#'   on both the data-driven inflection path and the explicit
-#'   \code{quantile_cutoff} path. Set to \code{NULL} (or 0) to disable it when
-#'   the analysis is intentionally about narrow-peak width variation, or for
-#'   toy/synthetic width distributions used in unit tests. Sharp-peak data
-#'   (e.g. TF ChIP-seq) should use \code{feature = "Intensity"} instead.
+#'   \code{feature = "Breadth"}. Optional absolute sanity floor (bp) for the
+#'   native-peak width regime. \code{NULL} (default) disables the guard. When a
+#'   numeric floor is supplied and a replicate's WIDEST eligible native peak is
+#'   narrower than it, the whole width distribution is in the sharp-peak
+#'   regime: no peak can meaningfully be called "broad", so the replicate
+#'   provides NO Broad evidence (\code{no_call} -> \code{Uncertain}, never a
+#'   silent Typical/Broad relabel) and a warning names the affected replicates.
+#'   This is a data-domain guard, not a quality gate: it is applied on both the
+#'   data-driven inflection path and the explicit \code{quantile_cutoff} path.
+#'   Sharp-peak data (e.g. TF ChIP-seq) should use \code{feature = "Intensity"}
+#'   instead.
 #' @param valid_chroms Character or NULL. Only used when
 #'   \code{feature = "Breadth"}. Optional vector of allowed chromosomes for the
 #'   genome-wide eligible native peak set (e.g. \code{c("chr1", ..., "chr22")}
@@ -195,7 +194,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                 n_bootstrap = NULL,
                                 seed = NULL,
                                 min_peak_overlap_fraction = 0.5,
-                                min_broad_width_bp = 500,
+                                min_broad_width_bp = NULL,
                                 valid_chroms = NULL,
                                 verbose = TRUE) {
   mode <- match.arg(mode)
@@ -676,7 +675,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                         support_rule, min_replicate_support,
                                         min_valid_replicates,
                                         min_peak_overlap_fraction,
-                                        min_broad_width_bp = 500,
+                                        min_broad_width_bp = NULL,
                                         valid_chroms, verbose) {
   # ---- 0. native peaks must be available -------------------------------
   np <- S4Vectors::metadata(se)$native_peaks
