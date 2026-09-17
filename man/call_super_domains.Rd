@@ -15,7 +15,7 @@ call_super_domains(
   min_replicate_support = 0.5,
   support_rule = c("majority", "all", "fraction"),
   min_valid_replicates = NULL,
-  min_quality = 0.1,
+  min_quality = NULL,
   tie_policy = c("strict", "inclusive"),
   n_bootstrap = NULL,
   seed = NULL,
@@ -112,8 +112,10 @@ requirement to 1) can call a "Super + no_call" pair Super — the no-call
 replicate never counts as Super, it simply does not lower the bar the user
 set. Use the stricter majority rule if that behaviour is unwanted.}
 
-\item{min_quality}{Numeric. Minimum inflection quality for a reliable call
-(see \code{find_hockey_inflection}; default 0.1).}
+\item{min_quality}{Numeric or NULL. Optional user-specified heuristic
+threshold for the continuous right-tail-prominence score (see
+\code{find_hockey_inflection}). The default \code{NULL} applies no
+calibrated quality threshold while retaining algorithmic validity checks.}
 
 \item{tie_policy}{Character. How to classify domains whose value equals the
 cutoff. \code{"strict"} (default) requires value \code{>} cutoff,

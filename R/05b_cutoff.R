@@ -19,52 +19,68 @@
 #'         the input unless \code{log_transform} is requested.
 #' }
 #'
-#' A method-agnostic \code{quality_score} (max perpendicular distance relative
-#' to the value range) is returned. When it falls below \code{min_quality},
-#' \code{call_status} is \code{"no_call"} and the inflection is not reliable.
+#' A method-agnostic \code{quality_score} is returned as a continuous
+#' right-tail-prominence descriptor. It is the maximum signed perpendicular
+#' distance below the diagonal after both axes are normalized to \eqn{[0,1]},
+#' and therefore ranges from 0 to \eqn{1/\sqrt{2}}. A score near zero indicates
+#' no detectable right-tail geometry. It is not a calibrated biological
+#' quality probability.
 #'
 #' @param x Numeric vector of feature values (e.g. per-domain intensity).
 #' @param method Character. \code{"elbow"} (default) or \code{"tangent"}.
-#' @param min_quality Numeric. Minimum \code{quality_score} for a reliable call.
-#'   The score is dimensionless (0-1, computed on \eqn{[0,1]}-normalized coordinates)
-#'   and measures curve prominence: ~0 for a linear curve, ~0.3-0.7 for real
-#'   hockey-stick profiles. Default 0.1 rejects near-linear curves while
-#'   retaining genuine inflection points.
+#' @param min_quality Numeric or NULL. Optional user-specified heuristic
+#'   threshold for \code{quality_score}. The default \code{NULL} applies no
+#'   calibrated quality threshold; it still rejects degenerate inputs, curves
+#'   without positive right-tail geometry, and endpoint cutoffs. Supplying a
+#'   number in \eqn{[0,1]} enables strict/legacy filtering. Values above the
+#'   theoretical score maximum \eqn{1/\sqrt{2}} reject every non-degenerate
+#'   call but remain accepted for backward compatibility.
 #' @param verbose Logical. Print warnings on low-quality calls (default FALSE).
 #'
 #' @return A list with elements:
 #'   \item{inflection_idx}{Index of the inflection point in the sorted vector.}
 #'   \item{cutoff_value}{Feature value at the inflection point.}
-#'   \item{quality_score}{Right-tail curve-prominence quality (0-1). A
-#'   left-loaded / inverse hockey-stick curve has quality 0 and is not called.}
+#'   \item{quality_score}{Continuous right-tail-prominence descriptor
+#'   (0 to \eqn{1/\sqrt{2}}). A linear or left-loaded curve has score near 0
+#'   and is not called.}
 #'   \item{method}{The method used.}
 #'   \item{call_status}{\code{"called"} or \code{"no_call"}.}
 #'   \item{reason}{Reason for \code{"no_call"}, if any.}
+#'   \item{reason_code}{Stable machine-readable reason for \code{"no_call"},
+#'   or \code{NA_character_} for a successful call.}
 #' @examples
 #' x <- c(rep(1, 50), seq(1, 100, length.out = 50))
 #' find_hockey_inflection(x, method = "elbow")
 #' find_hockey_inflection(x, method = "tangent")
 #' @export
 find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
-                                   min_quality = 0.1, verbose = FALSE) {
+                                   min_quality = NULL, verbose = FALSE) {
   method <- match.arg(method)
-  if (length(min_quality) != 1L || !is.numeric(min_quality) ||
-      !is.finite(min_quality) || min_quality < 0 || min_quality > 1) {
-    stop("min_quality must be a finite number in [0, 1].", call. = FALSE)
+  if (!is.null(min_quality) &&
+      (length(min_quality) != 1L || !is.numeric(min_quality) ||
+       !is.finite(min_quality) || min_quality < 0 || min_quality > 1)) {
+    stop("min_quality must be NULL or a finite number in [0, 1].",
+         call. = FALSE)
   }
   x <- x[is.finite(x)]
   n <- length(x)
 
-  no_call <- function(reason) {
+  no_call <- function(reason, reason_code, quality_score = NA_real_,
+                      inflection_idx = NA_integer_, cutoff_value = NA_real_) {
     if (verbose) warning(reason, call. = FALSE)
-    list(inflection_idx = NA_integer_, cutoff_value = NA_real_,
-         quality_score = NA_real_, method = method, call_status = "no_call",
-         reason = reason)
+    list(inflection_idx = inflection_idx, cutoff_value = cutoff_value,
+         quality_score = quality_score, method = method,
+         call_status = "no_call", reason = reason,
+         reason_code = reason_code)
   }
 
-  if (n < 3) return(no_call("Fewer than 3 finite values. No reliable inflection."))
+  if (n < 3) {
+    return(no_call("Fewer than 3 finite values. No reliable inflection.",
+                   "insufficient_finite_values"))
+  }
   if (diff(range(x)) <= .Machine$double.eps)
-    return(no_call("Constant feature values. No reliable inflection."))
+    return(no_call("Constant feature values. No reliable inflection.",
+                   "constant_feature"))
 
   xs <- sort(x)
   if (method == "tangent") {
@@ -72,7 +88,8 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     xs_clamp[xs_clamp < 0] <- 0   # ROSE clamps negative (control-subtracted) signals to 0
     slope <- (max(xs_clamp) - min(xs_clamp)) / n
     if (slope <= .Machine$double.eps)
-      return(no_call("Zero slope in tangent fit. No reliable inflection."))
+      return(no_call("Zero slope in tangent fit. No reliable inflection.",
+                     "zero_tangent_slope"))
     numPts_below <- function(z) {
       z <- pmin(pmax(z, 1), n)
       yPt <- xs_clamp[z]           # R truncates non-integer index like ROSE's myVector[x]
@@ -113,17 +130,34 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   quality_score <- max(0, max(perp0))
 
   cutoff_value <- xs[inflection_idx]
+  geometry_tolerance <- sqrt(.Machine$double.eps)
+  if (!is.finite(quality_score) || quality_score <= geometry_tolerance) {
+    return(no_call(
+      "No positive right-tail geometry was detected.",
+      "no_right_tail_geometry", quality_score, inflection_idx, cutoff_value))
+  }
+  if (!is.finite(cutoff_value) || inflection_idx <= 1L ||
+      inflection_idx >= n) {
+    return(no_call(
+      "The estimated cutoff is non-finite or lies at a ranked endpoint.",
+      "invalid_cutoff", quality_score, inflection_idx, cutoff_value))
+  }
+
   call_status <- "called"
   reason <- NA_character_
-  if (is.finite(quality_score) && quality_score < min_quality) {
+  reason_code <- NA_character_
+  if (!is.null(min_quality) && quality_score < min_quality) {
     call_status <- "no_call"
-    reason <- sprintf("quality=%.4f < %.4f. No reliable inflection.", quality_score, min_quality)
+    reason <- sprintf(
+      "quality_score=%.4f is below the user-specified min_quality=%.4f.",
+      quality_score, min_quality)
+    reason_code <- "below_user_min_quality"
     if (verbose) warning(reason, call. = FALSE)
   }
 
   list(inflection_idx = inflection_idx, cutoff_value = cutoff_value,
        quality_score = quality_score, method = method,
-       call_status = call_status, reason = reason)
+       call_status = call_status, reason = reason, reason_code = reason_code)
 }
 
 
@@ -131,14 +165,14 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
 .call_super_domains_on_vector <- function(val_vector, feature, quantile_cutoff,
                                            log_transform, verbose,
                                            n_bootstrap = NULL, seed = NULL,
-                                           method = "elbow", min_quality = 0.1,
+                                           method = "elbow", min_quality = NULL,
                                            tie_policy = "strict") {
 
   # Return a clean no-call record for degenerate input rather than stopping:
   # Bioconductor packages should not error on legitimate boundary data
   # (constant values, all-NA). The caller records no_call and the combined
   # taxonomy propagates it as "Uncertain".
-  .no_call <- function(reason) {
+  .no_call <- function(reason, reason_code) {
     list(Domain_Type = rep(NA_character_, length(val_vector)),
          Rank = rep(NA_real_, length(val_vector)),
          Value_Used = rep(NA_real_, length(val_vector)),
@@ -148,6 +182,7 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
          quality_score = NA_real_,
          call_status = "no_call",
          reason = reason,
+         reason_code = reason_code,
          n_total = length(val_vector),
          n_super = NA_integer_,
          cutoff_stability_interval = NULL,
@@ -155,9 +190,10 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   }
 
   if (!any(is.finite(val_vector)) || all(is.na(val_vector)))
-    return(.no_call("All values are NA or non-finite."))
+    return(.no_call("All values are NA or non-finite.", "all_nonfinite"))
   if (diff(range(val_vector, na.rm = TRUE)) <= .Machine$double.eps)
-    return(.no_call("Constant feature values. No reliable inflection."))
+    return(.no_call("Constant feature values. No reliable inflection.",
+                    "constant_feature"))
 
   # Resolve log-transform once. The user may pass NULL (auto), TRUE,
   # or FALSE. We resolve to a concrete value here so that bootstrap recursion
@@ -191,6 +227,8 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   inflection_method <- NA_character_
   quality_score <- NA_real_
   cutoff_value <- NA_real_
+  reason <- NA_character_
+  reason_code <- NA_character_
 
   if (!is.null(quantile_cutoff)) {
     cutoff_value <- stats::quantile(rank_df$Value, probs = quantile_cutoff, na.rm = TRUE)
@@ -203,6 +241,8 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     inflection_idx <- inflect$inflection_idx
     quality_score <- inflect$quality_score
     call_status <- inflect$call_status
+    reason <- inflect$reason
+    reason_code <- inflect$reason_code
     inflection_method <- if (method == "tangent") "tangent" else "elbow_distance"
     if (call_status == "no_call" && verbose)
       message(sprintf("  [%s] %s", feature, inflect$reason))
@@ -279,6 +319,8 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
     inflection_method = inflection_method,
     quality_score = quality_score,
     call_status = call_status,
+    reason = reason,
+    reason_code = reason_code,
     effective_log_transform = effective_log_transform,
     n_total = n,
     n_super = sum(grepl("_Super", rank_df$Domain_Type), na.rm = TRUE),

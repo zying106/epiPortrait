@@ -7,7 +7,7 @@
 find_hockey_inflection(
   x,
   method = c("elbow", "tangent"),
-  min_quality = 0.1,
+  min_quality = NULL,
   verbose = FALSE
 )
 }
@@ -16,11 +16,13 @@ find_hockey_inflection(
 
 \item{method}{Character. \code{"elbow"} (default) or \code{"tangent"}.}
 
-\item{min_quality}{Numeric. Minimum \code{quality_score} for a reliable call.
-The score is dimensionless (0-1, computed on \eqn{[0,1]}-normalized coordinates)
-and measures curve prominence: ~0 for a linear curve, ~0.3-0.7 for real
-hockey-stick profiles. Default 0.1 rejects near-linear curves while
-retaining genuine inflection points.}
+\item{min_quality}{Numeric or NULL. Optional user-specified heuristic
+threshold for \code{quality_score}. The default \code{NULL} applies no
+calibrated quality threshold; it still rejects degenerate inputs, curves
+without positive right-tail geometry, and endpoint cutoffs. Supplying a
+number in \eqn{[0,1]} enables strict/legacy filtering. Values above the
+theoretical score maximum \eqn{1/\sqrt{2}} reject every non-degenerate
+call but remain accepted for backward compatibility.}
 
 \item{verbose}{Logical. Print warnings on low-quality calls (default FALSE).}
 }
@@ -28,11 +30,14 @@ retaining genuine inflection points.}
 A list with elements:
 \item{inflection_idx}{Index of the inflection point in the sorted vector.}
 \item{cutoff_value}{Feature value at the inflection point.}
-\item{quality_score}{Right-tail curve-prominence quality (0-1). A
-left-loaded / inverse hockey-stick curve has quality 0 and is not called.}
+\item{quality_score}{Continuous right-tail-prominence descriptor
+(0 to \eqn{1/\sqrt{2}}). A linear or left-loaded curve has score near 0
+and is not called.}
 \item{method}{The method used.}
 \item{call_status}{\code{"called"} or \code{"no_call"}.}
 \item{reason}{Reason for \code{"no_call"}, if any.}
+\item{reason_code}{Stable machine-readable reason for \code{"no_call"},
+or \code{NA_character_} for a successful call.}
 }
 \description{
 Locates the inflection point of a ranked (ascending) value curve used to
@@ -54,9 +59,12 @@ implements only an inflection step, not the full ROSE pipeline
 the input unless \code{log_transform} is requested.
 }
 
-A method-agnostic \code{quality_score} (max perpendicular distance relative
-to the value range) is returned. When it falls below \code{min_quality},
-\code{call_status} is \code{"no_call"} and the inflection is not reliable.
+A method-agnostic \code{quality_score} is returned as a continuous
+right-tail-prominence descriptor. It is the maximum signed perpendicular
+distance below the diagonal after both axes are normalized to \eqn{[0,1]},
+and therefore ranges from 0 to \eqn{1/\sqrt{2}}. A score near zero indicates
+no detectable right-tail geometry. It is not a calibrated biological
+quality probability.
 }
 \examples{
 x <- c(rep(1, 50), seq(1, 100, length.out = 50))

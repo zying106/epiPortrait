@@ -168,7 +168,10 @@ compare_superdomains <- function(se, group_var = "Condition",
     prov <- S4Vectors::metadata(se)$superdomain_calls[[feature]]
     c_method <- if (!is.null(prov$method)) prov$method else "tangent"
     c_log <- if (!is.null(prov$log_transform_used)) prov$log_transform_used else FALSE
-    c_minq <- if (!is.null(prov$min_quality)) prov$min_quality else 0.1
+    # NULL is the current default: quality_score remains a continuous
+    # descriptor while algorithmic validity checks still reject degenerate
+    # curves. Older objects with an explicit threshold preserve that value.
+    c_minq <- if (!is.null(prov$min_quality)) prov$min_quality else NULL
     c_quantile <- if (!is.null(prov$quantile_cutoff)) prov$quantile_cutoff else NULL
 
     mat <- assay(se, feature)

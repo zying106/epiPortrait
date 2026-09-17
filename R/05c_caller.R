@@ -111,8 +111,10 @@
 #'   requirement to 1) can call a "Super + no_call" pair Super — the no-call
 #'   replicate never counts as Super, it simply does not lower the bar the user
 #'   set. Use the stricter majority rule if that behaviour is unwanted.
-#' @param min_quality Numeric. Minimum inflection quality for a reliable call
-#'   (see \code{find_hockey_inflection}; default 0.1).
+#' @param min_quality Numeric or NULL. Optional user-specified heuristic
+#'   threshold for the continuous right-tail-prominence score (see
+#'   \code{find_hockey_inflection}). The default \code{NULL} applies no
+#'   calibrated quality threshold while retaining algorithmic validity checks.
 #' @param tie_policy Character. How to classify domains whose value equals the
 #'   cutoff. \code{"strict"} (default) requires value \code{>} cutoff,
 #'   matching the original ROSE super-enhancer selection
@@ -188,7 +190,7 @@ call_super_domains <- function(se, feature = "Intensity",
                                 min_replicate_support = 0.5,
                                 support_rule = c("majority", "all", "fraction"),
                                 min_valid_replicates = NULL,
-                                min_quality = 0.1,
+                                min_quality = NULL,
                                 tie_policy = c("strict", "inclusive"),
                                 n_bootstrap = NULL,
                                 seed = NULL,
@@ -204,9 +206,10 @@ call_super_domains <- function(se, feature = "Intensity",
   method <- match.arg(method, c("elbow", "tangent"))
   support_rule <- match.arg(support_rule)
   tie_policy <- match.arg(tie_policy)
-  if (length(min_quality) != 1L || !is.numeric(min_quality) ||
-      !is.finite(min_quality) || min_quality < 0 || min_quality > 1) {
-    stop("min_quality must be a finite number in [0, 1].")
+  if (!is.null(min_quality) &&
+      (length(min_quality) != 1L || !is.numeric(min_quality) ||
+       !is.finite(min_quality) || min_quality < 0 || min_quality > 1)) {
+    stop("min_quality must be NULL or a finite number in [0, 1].")
   }
   if (!is.null(n_bootstrap) &&
       (length(n_bootstrap) != 1L || !is.numeric(n_bootstrap) ||
@@ -351,6 +354,8 @@ call_super_domains <- function(se, feature = "Intensity",
       bootstrap_success_rate = static_call$bootstrap_success_rate,
       quality_score = static_call$quality_score,
       call_status = static_call$call_status,
+      reason = static_call$reason,
+      reason_code = static_call$reason_code,
       inflection_method = static_call$inflection_method,
       n_total = static_call$n_total,
       n_super = static_call$n_super,
@@ -461,6 +466,8 @@ call_super_domains <- function(se, feature = "Intensity",
            bootstrap_success_rate = r$bootstrap_success_rate,
            quality_score = r$quality_score,
            call_status = r$call_status,
+           reason = r$reason,
+           reason_code = r$reason_code,
            inflection_method = r$inflection_method)
     })
     names(per_sample_prov) <- colnames(mat)
@@ -486,6 +493,8 @@ call_super_domains <- function(se, feature = "Intensity",
         cutoff = mean_call$cutoff_value,
         quality_score = mean_call$quality_score,
         call_status = mean_call$call_status,
+        reason = mean_call$reason,
+        reason_code = mean_call$reason_code,
         n_super = mean_call$n_super),
       note = paste(
         "Global consensus: no single cutoff ranks the consensus; each",
@@ -535,6 +544,8 @@ call_super_domains <- function(se, feature = "Intensity",
              bootstrap_success_rate = r$bootstrap_success_rate,
              quality_score = r$quality_score,
              call_status = r$call_status,
+             reason = r$reason,
+             reason_code = r$reason_code,
              inflection_method = r$inflection_method)
       })
       group_prov[[g]] <- list(
@@ -588,6 +599,8 @@ call_super_domains <- function(se, feature = "Intensity",
         bootstrap_success_rate = call_res$bootstrap_success_rate,
         quality_score = call_res$quality_score,
         call_status = call_res$call_status,
+        reason = call_res$reason,
+        reason_code = call_res$reason_code,
         inflection_method = call_res$inflection_method,
         n_super = call_res$n_super)
     }
@@ -613,6 +626,8 @@ call_super_domains <- function(se, feature = "Intensity",
     bootstrap_success_rate = provenance$bootstrap_success_rate,
     quality_score = provenance$quality_score,
     call_status = provenance$call_status,
+    reason = provenance$reason,
+    reason_code = provenance$reason_code,
     inflection_method = provenance$inflection_method,
     n_total = provenance$n_total,
     n_super = if (!is.null(provenance$n_super)) provenance$n_super else n_super,
@@ -746,6 +761,7 @@ call_super_domains <- function(se, feature = "Intensity",
           replicate = s, n_eligible = length(eligible),
           cutoff = NA_real_, quality_score = inflect$quality_score,
           call_status = inflect$call_status, reason = inflect$reason,
+          reason_code = inflect$reason_code,
           domain_evidence_reason_code = "inflection_no_call")
         if (verbose) {
           message(sprintf("  [Breadth] %s: no reliable inflection -> no evidence (Uncertain)",
@@ -818,9 +834,10 @@ call_super_domains <- function(se, feature = "Intensity",
                                    min_quality = min_quality, verbose = FALSE),
             error = function(e) list(call_status = "no_call",
                                      cutoff_value = NA_real_))
-          # Only a "called" resample is a bootstrap success: no_call resamples
-          # (quality below min_quality) can still carry a finite cutoff_value,
-          # which must not be counted as a stable cutoff.
+          # Only a "called" resample is a bootstrap success. A no-call
+          # resample can still carry a finite provisional cutoff (for example,
+          # after an explicit strict min_quality filter), which must not be
+          # counted as a stable cutoff.
           cutoffs[b] <- if (identical(br$call_status, "called")) {
             br$cutoff_value
           } else {

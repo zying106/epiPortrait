@@ -638,19 +638,19 @@ Issues and feature requests:
 ## Citation
 
 > ZHANG Y. (2026). *epiPortrait: Replicate-Aware Epigenomic Domain Profiling*.
-> R package version 0.99.1.
+> R package version 0.99.4.
 > <https://github.com/zying106/epiPortrait>
 
-The canonical citation is stored in `inst/CITATION` and can be retrieved
-programmatically at any time with `citation("epiPortrait")`; the BibTeX entry
-above mirrors it.
+The package citation is generated from `DESCRIPTION` and can be retrieved
+programmatically with `citation("epiPortrait")`; the BibTeX entry below mirrors
+the current development version.
 
 ``` bibtex
 @Manual{epiPortrait,
   title  = {epiPortrait: Replicate-Aware Epigenomic Domain Profiling},
   author = {Ying ZHANG},
   year   = {2026},
-  note   = {R package version 0.99.1},
+  note   = {R package version 0.99.4},
   url    = {https://github.com/zying106/epiPortrait}
 }
 ```

@@ -22,6 +22,21 @@ test_that("continuous quantile calls retain interpolated cutoffs", {
   expect_equal(sum(inclusive$Domain_Type == "Intensity_Super_Element"), 3)
 })
 
+test_that("weak valid elbows are called by default and strict mode abstains", {
+  x <- setNames((seq_len(100) / 100)^1.45, paste0("d", seq_len(100)))
+  default <- .call_super_domains_on_vector(
+    x, "Intensity", NULL, FALSE, FALSE)
+  strict <- .call_super_domains_on_vector(
+    x, "Intensity", NULL, FALSE, FALSE, min_quality = 0.1)
+
+  expect_equal(default$call_status, "called")
+  expect_true(all(!is.na(default$Domain_Type)))
+  expect_gt(default$n_super, 0)
+  expect_equal(strict$call_status, "no_call")
+  expect_true(all(is.na(strict$Domain_Type)))
+  expect_identical(strict$reason_code, "below_user_min_quality")
+})
+
 .evidence_fixture <- function() {
   se <- SummarizedExperiment::SummarizedExperiment(
     assays = list(Intensity = matrix(1, 3, 2)),

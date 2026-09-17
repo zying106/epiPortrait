@@ -1,5 +1,13 @@
 # epiPortrait 0.99.4
 
+* Revised inflection reliability semantics: `quality_score` is now reported as
+  a continuous right-tail-prominence descriptor rather than being filtered by
+  an uncalibrated default threshold. `min_quality = NULL` is the new default;
+  an explicit numeric value retains strict/legacy filtering. Degenerate input,
+  absent right-tail geometry, endpoint cutoffs, and the Breadth-specific
+  sharp-peak guard still produce auditable `no_call` results. Replicate
+  provenance now records stable `reason_code` values.
+
 * `gsea_epi_genes()` no longer passes `by = "fgsea"` to
   `clusterProfiler::gseGO()`. Newer clusterProfiler releases removed that
   argument (GSEA always uses the fgsea/enrichit backend and forwards extra
