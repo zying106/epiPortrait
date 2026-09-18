@@ -1,5 +1,17 @@
 #' Get Mark-Specific Preset
 #'
+#' @description Returns mark-appropriate configuration hints. The preset is a
+#'   configuration helper only: it does not run any part of the pipeline, and in
+#'   particular \code{exclude_promoter} is advisory. The core functions
+#'   (\code{get_consensus_peaks()}, \code{stitch_epi_peaks()},
+#'   \code{build_portrait_matrix()}, \code{call_super_domains()}) never filter
+#'   promoter-proximal regions automatically, because that choice changes the
+#'   candidate-domain universe and must be explicit. To realise
+#'   \code{exclude_promoter}, call \code{\link{filter_promoter_peaks}()} on the
+#'   consensus peaks \emph{before} \code{stitch_epi_peaks()} (the order used by
+#'   ROSE's \code{-t} option; note ROSE's own default is no TSS exclusion,
+#'   \code{-t 0}).
+#'
 #' @param mark "H3K27ac", "H3K4me3", "H3K27me3", "H3K9me3", etc.
 #' @return List of preset parameters, including:
 #'   \itemize{
@@ -13,6 +25,12 @@
 #'           \code{stitch_epi_peaks(x, 0)} itself still merges
 #'           overlapping/adjacent ranges; the sentinel must be handled by the
 #'           caller (see the vignette preset workflow).
+#'     \item \code{exclude_promoter}: advisory logical. \code{TRUE} for the
+#'           distal enhancer marks H3K27ac / H3K4me1, \code{FALSE} otherwise.
+#'           It does NOT filter anything by itself; when set, the recommended
+#'           workflow is to apply \code{\link{filter_promoter_peaks}()} to the
+#'           consensus peaks before stitching, and to document the promoter
+#'           window and genome assembly used.
 #'     \item \code{primary_feature}: ranking feature
 #'     \item \code{mark_class}: "active" (H3K27ac, H3K4me3, H3K4me1) or
 #'           "broad_repressive" (H3K27me3, H3K9me3)

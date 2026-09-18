@@ -66,6 +66,15 @@ stitch_epi_peaks <- function(gr, stitch_distance = 12500) {
 #' @description Filters out peaks that overlap with specified genomic regions,
 #' typically used to remove promoter-proximal peaks before Super-Element analysis.
 #'
+#' This is an explicit, opt-in universe-definition step: the rest of the
+#' package never applies it automatically. For distal enhancer marks
+#' (\code{get_mark_preset("H3K27ac")$exclude_promoter} is \code{TRUE}), call it
+#' on the consensus peaks \emph{before} \code{\link{stitch_epi_peaks}()}, which
+#' matches the order of ROSE's \code{-t} option. Note that ROSE's own default is
+#' no TSS exclusion (\code{-t 0}); set \code{upstream}/\code{downstream} (e.g.
+#' 2500 for a ROSE-like exclusion) only when a promoter-excluded universe is
+#' intended, and use a matching external reference.
+#'
 #' @param gr A GRanges object of peaks.
 #' @param genome A character string ("hg38", "hg19", "mm10", etc.) or a TxDb object.
 #' @param upstream Number of bp upstream of TSS to define promoter (default: 2000).

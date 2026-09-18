@@ -352,6 +352,15 @@ ctrl_consensus <- get_consensus_peaks(ctrl_peak_list, min_reps = 2)
 treat_consensus <- get_consensus_peaks(treat_peak_list, min_reps = 2)
 candidate_domains <- GenomicRanges::reduce(c(ctrl_consensus, treat_consensus))
 
+# Optional, but recommended for H3K27ac distal super-enhancer analysis:
+# exclude promoter-proximal peaks BEFORE stitching (ROSE -t order).
+# This is an explicit universe-definition step; the package does NOT apply it
+# automatically, and ROSE's own default is no TSS exclusion (-t 0).
+if (isTRUE(preset$exclude_promoter)) {
+  candidate_domains <- filter_promoter_peaks(candidate_domains, genome = "hg38",
+                                             upstream = 2500, downstream = 2500)
+}
+
 if (preset$stitch_distance > 0) {
   candidate_domains <- stitch_epi_peaks(candidate_domains,
                                         stitch_distance = preset$stitch_distance)
@@ -361,6 +370,13 @@ if (preset$stitch_distance > 0) {
 A single global `min_reps = 2` across all samples would let rare
 condition-specific loci fall below the replicate threshold; the
 per-condition-then-union pattern keeps them.
+
+`exclude_promoter` in the preset is **advisory**: no core function reads it.
+Promoter exclusion is a universe-definition choice (it strongly affects domain
+counts and any comparison to an external reference), so it is left explicit and
+must be recorded in the Methods. Note that ROSE's default is `-t 0` (no TSS
+exclusion); use a nonzero window only if you intend a promoter-excluded
+universe and compare against a matching reference.
 
 ### Module 2: Super-Domain Calling
 
@@ -422,6 +438,13 @@ with the ROSE super-enhancer pipeline (Whyte et al., 2013), use
 scale). This is an optional benchmark setting, not the package's primary
 workflow. Use the reference ROSE implementation for claims about numerical
 agreement with ROSE.
+
+**Intensity ranking scale (benchmark).** On heavy-tailed H3K27ac Intensity, the
+default `log10(x + 1)` ranking can place the cutoff too low and over-call
+`Intensity-Super`. Ranking on the raw scale (`log_transform = FALSE`) agrees
+much more closely with a ROSE super-enhancer reference. `elbow` and `tangent`
+were near-equivalent on the raw scale, and native-peak `Breadth` (for example
+H3K4me3 broadPeak) was insensitive to the cutoff method.
 
 **Breadth-Super is a peak-level call.** Each replicate's genome-wide eligible
 native PeakWidth distribution is cut by an elbow/inflection; broad peaks are

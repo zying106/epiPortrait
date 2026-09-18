@@ -1,5 +1,25 @@
 # epiPortrait 0.99.4
 
+* Clarified promoter/TSS handling. The core functions never filter
+  promoter-proximal regions automatically; `filter_promoter_peaks()` remains an
+  explicit, opt-in universe-definition step. The `exclude_promoter` field of
+  `get_mark_preset()` is now documented as advisory (TRUE for H3K27ac /
+  H3K4me1): the recommended workflow applies `filter_promoter_peaks()` to the
+  consensus peaks **before** `stitch_epi_peaks()`, matching the order of ROSE's
+  `-t` option. Documentation also notes that ROSE's own default is no TSS
+  exclusion (`-t 0`), and that promoter exclusion changes the candidate universe
+  and any external-reference comparison. Documentation only; no behaviour
+  change.
+
+* Documented the Intensity ranking-scale benchmark (package-level help,
+  `call_super_domains()` and the vignette). On heavy-tailed active-mark
+  Intensity such as H3K27ac, the default `log10(x + 1)` ranking can place the
+  cutoff too low and over-call Intensity-Super; the raw scale
+  (`log_transform = FALSE`) agrees much more closely with a ROSE
+  super-enhancer reference. `elbow` and `tangent` were near-equivalent on the
+  raw scale, and native-peak Breadth (for example H3K4me3 broadPeak) was
+  insensitive to the cutoff method. Documentation only; no behaviour change.
+
 * Revised inflection reliability semantics: `quality_score` is now reported as
   a continuous right-tail-prominence descriptor rather than being filtered by
   an uncalibrated default threshold. `min_quality = NULL` is the new default;

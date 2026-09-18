@@ -355,7 +355,13 @@ against the reference `calculate_cutoff()` before drawing quantitative
 conclusions. This is an optional benchmark setting, not the package's primary
 workflow. The log-transformed default is retained
 as the epiPortrait convention because it stabilises the skewed intensity
-distribution for the elbow heuristic and downstream analysis.
+distribution for the elbow heuristic and downstream analysis. Note, however,
+that on heavy-tailed H3K27ac Intensity the default log scale can place the
+cutoff too low and over-call `Intensity-Super`; ranking on the raw scale
+(`log_transform = FALSE`) agrees much more closely with a ROSE super-enhancer
+reference. `elbow` and `tangent` were near-equivalent on the raw scale, and
+native-peak `Breadth` (for example H3K4me3 broadPeak) was insensitive to the
+cutoff method.
 
 All `Super` labels are relative to the candidate-domain universe and selected
 cutoff. They should not be interpreted as functional super-enhancers without
@@ -837,8 +843,9 @@ rowData(se_h3k4me3)$Intensity_NOverlaps__4h      # # overlapping H3K27ac domains
   `"majority"` (strict > half of the non-NA overlapping calls are super).
 - `min_overlap_bp`: require at least this many overlapping base pairs.
 - Domains with no overlap in B stay `NA` for the overlaid call, flagging the
-  two-universe "boundary" regions (e.g. promoter-proximal enhancers that the
-  enhancer-mark pipeline's ROSE-style promoter filter deliberately excludes).
+  two-universe "boundary" regions (e.g. promoter-proximal enhancers that are
+  absent from the enhancer-mark universe when an explicit
+  `filter_promoter_peaks()` step was applied before stitching).
 - Promoter-proximal regions absent from an enhancer-mark universe can therefore
   remain represented in the promoter-mark object.
 
@@ -903,6 +910,29 @@ se <- compute_width_transition(se, ref_group = "Control", target_group = "Treatm
 # repressive display terminology (Extended-Domain / Dual-Extreme)
 plot_domain_landscape(se, group = "Control", mark = "H3K27me3")
 ```
+
+`exclude_promoter` is **advisory and is never applied automatically**. The
+distal enhancer marks H3K27ac and H3K4me1 return `exclude_promoter = TRUE`; for
+those, apply `filter_promoter_peaks()` to the consensus peaks **before**
+stitching (the order used by ROSE's `-t` option):
+
+```r
+preset <- get_mark_preset("H3K27ac")
+consensus <- get_consensus_peaks(peak_list, min_reps = 2)
+if (isTRUE(preset$exclude_promoter)) {
+  consensus <- filter_promoter_peaks(consensus, genome = "hg38",
+                                     upstream = 2500, downstream = 2500)
+}
+domains <- stitch_epi_peaks(consensus, stitch_distance = preset$stitch_distance)
+```
+
+Promoter exclusion is a **universe-definition** choice, not a hidden default:
+it changes the candidate domains, the cutoffs and any comparison to an external
+reference, so record the window and genome assembly in the Methods. Note that
+ROSE's own default is no TSS exclusion (`-t 0`); use a nonzero window only when
+a promoter-excluded universe is intended, and then compare against a matching
+reference. If no promoter filter is applied, H3K27ac `Intensity-Super` can be
+dominated by strong promoters rather than distal super-enhancers.
 
 The internal classes remain `Intensity-Super` / `Breadth-Super` /
 `Dual-Super`; the `mark` argument only changes surface labels.

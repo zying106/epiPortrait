@@ -25,6 +25,18 @@ domain-derived testable universe), and result visualization. Primary use
 case: histone-mark ChIP-seq / CUT&Tag; continuous-track workflows also apply
 to ATAC-seq-derived domains.
 }
+\section{Intensity ranking scale}{
+
+For heavy-tailed active-mark Intensity such as H3K27ac, the default
+\code{log10(x + 1)} ranking can place the inflection cutoff too low and
+over-call Intensity-Super. Ranking on the raw scale
+(\code{log_transform = FALSE}) gives Intensity-Super counts and
+ROSE-style concordance much closer to a stitched-enhancer (ROSE) reference;
+\code{method = "elbow"} and \code{"tangent"} are near-equivalent on the raw
+scale, and native-peak Breadth (for example H3K4me3 broadPeak) is insensitive
+to the cutoff method.
+}
+
 \section{Core workflow}{
 
 \enumerate{

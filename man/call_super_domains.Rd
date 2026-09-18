@@ -215,7 +215,11 @@ conclusions. This is an optional benchmark setting, not the package's primary
 workflow; the core value of epiPortrait is the Intensity x native-Breadth
 decomposition with replicate support. The log-transformed default is retained
 as the epiPortrait convention because it stabilises the skewed intensity
-distribution for the elbow heuristic and downstream analysis.
+distribution for the elbow heuristic and downstream analysis. Note however
+that on heavy-tailed active-mark Intensity (for example H3K27ac) the default
+log scale can place the cutoff too low and over-call Intensity-Super; prefer
+\code{log_transform = FALSE} when Intensity-Super counts must be comparable
+to a stitched-enhancer (ROSE-style) reference.
 }
 \examples{
 data(example_se)
