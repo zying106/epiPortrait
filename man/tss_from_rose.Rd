@@ -31,3 +31,7 @@ writeLines(c("#bin\tname\tchrom\tstrand\ttxStart\ttxEnd",
              "0\tNM_000002\tchr1\t-\t5000\t6000"), f)
 tss_from_rose("hg38", f)
 }
+\seealso{
+\code{\link{tss_from_refgene}}, \code{\link{filter_promoter_peaks}},
+\code{\link{revert_multi_tss}}.
+}

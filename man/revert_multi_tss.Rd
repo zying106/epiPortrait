@@ -45,3 +45,7 @@ tss$gene <- c("A", "B", "C", "D")
 # the first stitched region spans 3 TSS (A, B, C) -> reverted
 length(revert_multi_tss(stitched, tss, orig, max_tss = 2))
 }
+\seealso{
+\code{\link{filter_promoter_peaks}}, \code{\link{tss_from_refgene}},
+\code{\link{tss_from_rose}}.
+}

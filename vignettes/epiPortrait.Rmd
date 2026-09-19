@@ -953,6 +953,56 @@ be dominated by strong promoters rather than distal super-enhancers.
 The internal classes remain `Intensity-Super` / `Breadth-Super` /
 `Dual-Super`; the `mark` argument only changes surface labels.
 
+### 6.7.2 ROSE-equivalent super-enhancer workflow (TSS exclusion)
+
+A complete, ROSE-comparable H3K27ac workflow. ROSE stitches at 12.5 kb, ranks
+on the raw signal, and (only when `-t` is non-zero) removes constituent peaks
+**contained within** TSS +/- `t` and reverts stitched regions spanning more than
+two gene TSS. The annotation must be RefSeq.
+
+```r
+# 0. ROSE RefSeq annotation (use the file ROSE ships for exact parity):
+#    https://github.com/younglab/ROSE/tree/main/annotation -> hg38_refseq.ucsc
+tss <- tss_from_rose("hg38", "hg38_refseq.ucsc")
+#    or build it online (UCSC refGene): tss <- tss_from_refgene("hg38")
+
+# 1. Constituent enhancer calls (ROSE operates per sample, not on a consensus)
+consensus <- your_narrowPeak_granges
+
+# 2. ROSE -t step 1: drop peaks CONTAINED within TSS +/- 2500 bp
+consensus <- filter_promoter_peaks(consensus, tss = tss,
+                                   upstream = 2500, downstream = 2500,
+                                   mode = "contained")
+
+# 3. Stitch at the ROSE default distance
+domains <- stitch_epi_peaks(consensus, stitch_distance = 12500)
+
+# 4. ROSE -t step 2: revert stitched regions spanning > 2 gene TSS
+domains <- revert_multi_tss(domains, tss = tss, original = consensus,
+                            max_tss = 2)
+
+# 5. Quantify with the BigWig and call on the raw scale with the ROSE-style
+#    tangent inflection (epiPortrait's tangent is a geometric variant)
+se <- build_portrait_matrix(sample_sheet, consensus_peaks = domains)
+se <- call_super_domains(se, feature = "Intensity",
+                         method = "tangent", log_transform = FALSE)
+```
+
+Notes:
+
+- ROSE's `-t` default is `0` (no TSS exclusion). Run steps 2 and 4 only when a
+  promoter-excluded universe is intended, and then compare against a ROSE run
+  that used the same `-t` and the same annotation file.
+- Omitting steps 2/4 (`-t 0`) is the default epiPortrait universe. Promoter/TSS
+  exclusion changes the candidate domains and any external comparison, so record
+  the window, annotation source and genome assembly in the Methods.
+- The `genome` shortcut path of `filter_promoter_peaks()` (e.g.
+  `genome = "hg38"`) resolves to UCSC knownGene, which is **not** ROSE's RefSeq
+  annotation; use `tss_from_rose()` / `tss_from_refgene()` for parity.
+- `filter_promoter_peaks()` reports the exclusion in
+  `S4Vectors::metadata(x)$promoter_exclusion`, and `revert_multi_tss()` in
+  `metadata(x)$multi_tss_revert`.
+
 ## 6.8 Parameter guidance
 
 - Start with `method = "elbow"` (default) for the main analysis; use

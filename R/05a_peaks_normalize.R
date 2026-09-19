@@ -113,6 +113,9 @@ stitch_epi_peaks <- function(gr, stitch_distance = 12500) {
 #' # "contained" keeps the 850 peak (it crosses the window edge)
 #' length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
 #'                              downstream = 100, mode = "contained"))
+#' @seealso \code{\link{tss_from_refgene}}, \code{\link{tss_from_rose}},
+#'   \code{\link{revert_multi_tss}}; the vignette section "ROSE-equivalent
+#'   super-enhancer workflow".
 #' @export
 filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000,
                                   downstream = 2000,
@@ -215,6 +218,8 @@ filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000,
 #'   length(tss)
 #' }
 #' }
+#' @seealso \code{\link{tss_from_rose}} (exact ROSE annotation parity),
+#'   \code{\link{filter_promoter_peaks}}, \code{\link{revert_multi_tss}}.
 #' @export
 tss_from_refgene <- function(genome = "hg38", txdb = NULL) {
   if (is.null(txdb)) {
@@ -264,6 +269,8 @@ tss_from_refgene <- function(genome = "hg38", txdb = NULL) {
 #'              "0\tNM_000001\tchr1\t+\t1000\t2000",
 #'              "0\tNM_000002\tchr1\t-\t5000\t6000"), f)
 #' tss_from_rose("hg38", f)
+#' @seealso \code{\link{tss_from_refgene}}, \code{\link{filter_promoter_peaks}},
+#'   \code{\link{revert_multi_tss}}.
 #' @export
 tss_from_rose <- function(genome, file) {
   if (missing(genome) || !is.character(genome) || length(genome) != 1L) {
@@ -332,6 +339,8 @@ tss_from_rose <- function(genome, file) {
 #' tss$gene <- c("A", "B", "C", "D")
 #' # the first stitched region spans 3 TSS (A, B, C) -> reverted
 #' length(revert_multi_tss(stitched, tss, orig, max_tss = 2))
+#' @seealso \code{\link{filter_promoter_peaks}}, \code{\link{tss_from_refgene}},
+#'   \code{\link{tss_from_rose}}.
 #' @export
 revert_multi_tss <- function(gr, tss, original, max_tss = 2L, tss_span = 50L) {
   if (!methods::is(gr, "GRanges") || !methods::is(tss, "GRanges") ||

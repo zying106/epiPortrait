@@ -73,3 +73,8 @@ length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
 length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
                              downstream = 100, mode = "contained"))
 }
+\seealso{
+\code{\link{tss_from_refgene}}, \code{\link{tss_from_rose}},
+\code{\link{revert_multi_tss}}; the vignette section "ROSE-equivalent
+super-enhancer workflow".
+}

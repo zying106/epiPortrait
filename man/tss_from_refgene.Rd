@@ -35,3 +35,7 @@ if (requireNamespace("txdbmaker", quietly = TRUE) &&
 }
 }
 }
+\seealso{
+\code{\link{tss_from_rose}} (exact ROSE annotation parity),
+\code{\link{filter_promoter_peaks}}, \code{\link{revert_multi_tss}}.
+}
