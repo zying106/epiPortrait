@@ -1,5 +1,16 @@
 # epiPortrait 0.99.4
 
+* Added an explicit, ROSE-compatible TSS/promoter exclusion toolkit.
+  `filter_promoter_peaks()` gains `mode = c("overlap", "contained")` (default
+  `"overlap"`, legacy behaviour) and a `tss =` argument that accepts a TSS
+  GRanges or a TxDb, so a shared annotation can be reused across samples. New
+  `tss_from_refgene()` (UCSC RefSeq/refGene TSS, the annotation family ROSE
+  uses) and `tss_from_rose()` (parse ROSE's own `<genome>_refseq.ucsc` file for
+  exact parity) supply the TSS set, and `revert_multi_tss()` implements ROSE's
+  post-stitching safeguard that reverts stitched regions spanning more than two
+  gene TSS. The exclusion window, mode, annotation source and counts are stored
+  in `S4Vectors::metadata()`. Core functions still never filter promoters
+  automatically; ROSE's default remains no TSS exclusion (`-t 0`).
 * Clarified promoter/TSS handling. The core functions never filter
   promoter-proximal regions automatically; `filter_promoter_peaks()` remains an
   explicit, opt-in universe-definition step. The `exclude_promoter` field of

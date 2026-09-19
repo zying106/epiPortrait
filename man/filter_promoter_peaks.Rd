@@ -2,38 +2,74 @@
 % Please edit documentation in R/05a_peaks_normalize.R
 \name{filter_promoter_peaks}
 \alias{filter_promoter_peaks}
-\title{Filter Peaks by Genomic Annotations (Promoter Exclusion)}
+\title{Filter Peaks by Genomic Annotations (Promoter / TSS Exclusion)}
 \usage{
-filter_promoter_peaks(gr, genome = "hg38", upstream = 2000, downstream = 2000)
+filter_promoter_peaks(
+  gr,
+  genome = "hg38",
+  upstream = 2000,
+  downstream = 2000,
+  mode = c("overlap", "contained"),
+  tss = NULL
+)
 }
 \arguments{
-\item{gr}{A GRanges object of peaks.}
+\item{gr}{A GRanges object of peaks (or consensus domains).}
 
-\item{genome}{A character string ("hg38", "hg19", "mm10", etc.) or a TxDb object.}
+\item{genome}{A character string ("hg38", "hg19", "mm10", etc.) or a TxDb
+object. Ignored when \code{tss} is supplied.}
 
-\item{upstream}{Number of bp upstream of TSS to define promoter (default: 2000).}
+\item{upstream}{Number of bp upstream of TSS to define the window
+(default: 2000).}
 
-\item{downstream}{Number of bp downstream of TSS to define promoter (default: 2000).}
+\item{downstream}{Number of bp downstream of TSS to define the window
+(default: 2000).}
+
+\item{mode}{\code{"overlap"} (default, legacy behaviour) removes any peak
+that intersects a promoter/TSS window. \code{"contained"} removes only
+peaks fully contained within a window (ROSE semantics), so large peaks
+that merely cross a TSS are kept.}
+
+\item{tss}{Optional GRanges of TSS positions (1 bp, strand-aware) or a TxDb.
+When supplied it overrides \code{genome} and lets the caller reuse an
+annotation source (for example RefSeq via \code{\link{tss_from_refgene}})
+across many samples.}
 }
 \value{
-A filtered GRanges object.
+A filtered GRanges object. Provenance (mode, window, source, counts)
+is stored in \code{S4Vectors::metadata(x)$promoter_exclusion}.
 }
 \description{
-Filters out peaks that overlap with specified genomic regions,
-typically used to remove promoter-proximal peaks before Super-Element analysis.
+Filters out peaks that overlap or are contained within specified
+promoter-proximal regions. This is an explicit, opt-in universe-definition
+step: the rest of the package never applies it automatically. For distal
+enhancer marks (\code{get_mark_preset("H3K27ac")$exclude_promoter} is
+\code{TRUE}), call it on the consensus peaks \emph{before}
+\code{\link{stitch_epi_peaks}()}, which matches the order of ROSE's
+\code{-t} option. Note that ROSE's own default is no TSS exclusion
+(\code{-t 0}); set \code{upstream}/\code{downstream} (e.g. 2500 for a
+ROSE-like exclusion) only when a promoter-excluded universe is intended, and
+use a matching external reference.
 
-This is an explicit, opt-in universe-definition step: the rest of the
-package never applies it automatically. For distal enhancer marks
-(\code{get_mark_preset("H3K27ac")$exclude_promoter} is \code{TRUE}), call it
-on the consensus peaks \emph{before} \code{\link{stitch_epi_peaks}()}, which
-matches the order of ROSE's \code{-t} option. Note that ROSE's own default is
-no TSS exclusion (\code{-t 0}); set \code{upstream}/\code{downstream} (e.g.
-2500 for a ROSE-like exclusion) only when a promoter-excluded universe is
-intended, and use a matching external reference.
+\strong{ROSE equivalence.} ROSE removes constituent peaks that are
+\emph{contained within} a TSS +/- \code{tssWindow} zone and then, after
+stitching, reverts any stitched region spanning more than two gene TSS
+(see \code{\link{revert_multi_tss}}). To approximate ROSE: use a RefSeq
+(\code{refGene}) TSS set (\code{\link{tss_from_refgene}} or
+\code{\link{tss_from_rose}}), \code{mode = "contained"} and
+\code{upstream = downstream = 2500}. The annotation source matters: the
+built-in \code{"hg38"}/\code{"hg19"}/\code{"mm10"} shortcuts resolve to
+UCSC \emph{knownGene}, not RefSeq, and give a different TSS set.
 }
 \examples{
-gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(100, 5000000), width = 200))
-if (requireNamespace("TxDb.Hsapiens.UCSC.hg38.knownGene", quietly = TRUE)) {
-  filter_promoter_peaks(gr, genome = "hg38")
-}
+gr <- GenomicRanges::GRanges("chr1",
+  IRanges::IRanges(c(850, 980, 5000), width = 100))
+tss <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1000, 1000),
+                              strand = "+")
+# "overlap" removes the peaks at 850 and 980 (both intersect TSS +/- 100)
+length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
+                             downstream = 100, mode = "overlap"))
+# "contained" keeps the 850 peak (it crosses the window edge)
+length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
+                             downstream = 100, mode = "contained"))
 }

@@ -49,7 +49,9 @@ candidate-domain universe and must be explicit. To realise
 \code{exclude_promoter}, call \code{\link{filter_promoter_peaks}()} on the
 consensus peaks \emph{before} \code{stitch_epi_peaks()} (the order used by
 ROSE's \code{-t} option; note ROSE's own default is no TSS exclusion,
-\code{-t 0}).
+\code{-t 0}). For ROSE-equivalent exclusion use a RefSeq TSS set
+(\code{\link{tss_from_refgene}} / \code{\link{tss_from_rose}}),
+\code{mode = "contained"} and \code{\link{revert_multi_tss}()}.
 }
 \examples{
 get_mark_preset("H3K27ac")

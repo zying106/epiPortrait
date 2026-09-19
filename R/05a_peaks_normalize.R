@@ -61,68 +61,334 @@ stitch_epi_peaks <- function(gr, stitch_distance = 12500) {
 }
 
 
-#' Filter Peaks by Genomic Annotations (Promoter Exclusion)
+#' Filter Peaks by Genomic Annotations (Promoter / TSS Exclusion)
 #'
-#' @description Filters out peaks that overlap with specified genomic regions,
-#' typically used to remove promoter-proximal peaks before Super-Element analysis.
+#' @description Filters out peaks that overlap or are contained within specified
+#' promoter-proximal regions. This is an explicit, opt-in universe-definition
+#' step: the rest of the package never applies it automatically. For distal
+#' enhancer marks (\code{get_mark_preset("H3K27ac")$exclude_promoter} is
+#' \code{TRUE}), call it on the consensus peaks \emph{before}
+#' \code{\link{stitch_epi_peaks}()}, which matches the order of ROSE's
+#' \code{-t} option. Note that ROSE's own default is no TSS exclusion
+#' (\code{-t 0}); set \code{upstream}/\code{downstream} (e.g. 2500 for a
+#' ROSE-like exclusion) only when a promoter-excluded universe is intended, and
+#' use a matching external reference.
 #'
-#' This is an explicit, opt-in universe-definition step: the rest of the
-#' package never applies it automatically. For distal enhancer marks
-#' (\code{get_mark_preset("H3K27ac")$exclude_promoter} is \code{TRUE}), call it
-#' on the consensus peaks \emph{before} \code{\link{stitch_epi_peaks}()}, which
-#' matches the order of ROSE's \code{-t} option. Note that ROSE's own default is
-#' no TSS exclusion (\code{-t 0}); set \code{upstream}/\code{downstream} (e.g.
-#' 2500 for a ROSE-like exclusion) only when a promoter-excluded universe is
-#' intended, and use a matching external reference.
+#' \strong{ROSE equivalence.} ROSE removes constituent peaks that are
+#' \emph{contained within} a TSS +/- \code{tssWindow} zone and then, after
+#' stitching, reverts any stitched region spanning more than two gene TSS
+#' (see \code{\link{revert_multi_tss}}). To approximate ROSE: use a RefSeq
+#' (\code{refGene}) TSS set (\code{\link{tss_from_refgene}} or
+#' \code{\link{tss_from_rose}}), \code{mode = "contained"} and
+#' \code{upstream = downstream = 2500}. The annotation source matters: the
+#' built-in \code{"hg38"}/\code{"hg19"}/\code{"mm10"} shortcuts resolve to
+#' UCSC \emph{knownGene}, not RefSeq, and give a different TSS set.
 #'
-#' @param gr A GRanges object of peaks.
-#' @param genome A character string ("hg38", "hg19", "mm10", etc.) or a TxDb object.
-#' @param upstream Number of bp upstream of TSS to define promoter (default: 2000).
-#' @param downstream Number of bp downstream of TSS to define promoter (default: 2000).
-#' @return A filtered GRanges object.
+#' @param gr A GRanges object of peaks (or consensus domains).
+#' @param genome A character string ("hg38", "hg19", "mm10", etc.) or a TxDb
+#'   object. Ignored when \code{tss} is supplied.
+#' @param upstream Number of bp upstream of TSS to define the window
+#'   (default: 2000).
+#' @param downstream Number of bp downstream of TSS to define the window
+#'   (default: 2000).
+#' @param mode \code{"overlap"} (default, legacy behaviour) removes any peak
+#'   that intersects a promoter/TSS window. \code{"contained"} removes only
+#'   peaks fully contained within a window (ROSE semantics), so large peaks
+#'   that merely cross a TSS are kept.
+#' @param tss Optional GRanges of TSS positions (1 bp, strand-aware) or a TxDb.
+#'   When supplied it overrides \code{genome} and lets the caller reuse an
+#'   annotation source (for example RefSeq via \code{\link{tss_from_refgene}})
+#'   across many samples.
+#' @return A filtered GRanges object. Provenance (mode, window, source, counts)
+#'   is stored in \code{S4Vectors::metadata(x)$promoter_exclusion}.
 #' @import GenomicRanges
 #' @examples
-#' gr <- GenomicRanges::GRanges("chr1", IRanges::IRanges(c(100, 5000000), width = 200))
-#' if (requireNamespace("TxDb.Hsapiens.UCSC.hg38.knownGene", quietly = TRUE)) {
-#'   filter_promoter_peaks(gr, genome = "hg38")
-#' }
+#' gr <- GenomicRanges::GRanges("chr1",
+#'   IRanges::IRanges(c(850, 980, 5000), width = 100))
+#' tss <- GenomicRanges::GRanges("chr1", IRanges::IRanges(1000, 1000),
+#'                               strand = "+")
+#' # "overlap" removes the peaks at 850 and 980 (both intersect TSS +/- 100)
+#' length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
+#'                              downstream = 100, mode = "overlap"))
+#' # "contained" keeps the 850 peak (it crosses the window edge)
+#' length(filter_promoter_peaks(gr, tss = tss, upstream = 100,
+#'                              downstream = 100, mode = "contained"))
 #' @export
-filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000, downstream = 2000) {
-
+filter_promoter_peaks <- function(gr, genome = "hg38", upstream = 2000,
+                                  downstream = 2000,
+                                  mode = c("overlap", "contained"),
+                                  tss = NULL) {
+  mode <- match.arg(mode)
   if (length(gr) == 0) return(gr)
-
-  message("Identifying promoter regions for exclusion...")
-
-  res <- .resolve_genome_resources(genome)
-  if (is.null(res$txdb)) {
-    stop("Promoter filtering requires a TxDb (genome = 'hg38'/'hg19'/'mm10' or a TxDb object).")
+  if (!methods::is(gr, "GRanges")) {
+    stop("gr must be a GRanges object.", call. = FALSE)
   }
-  txdb <- res$txdb
-
-  if (!requireNamespace("GenomicFeatures", quietly = TRUE)) stop("Please install 'GenomicFeatures'.")
-
-  # A chr-vs-1 naming mismatch would silently remove 0 promoter overlaps
-  # and leave every peak in place; enforce seqlevel compatibility like
-  # annotate_epi_domains() does.
-  .check_seqlevel_compatibility(gr, txdb = txdb, enforce = TRUE)
-
-  # Validate promoter window parameters using the annotation rules.
   for (nm in c("upstream", "downstream")) {
     v <- get(nm)
     if (length(v) != 1L || !is.numeric(v) || !is.finite(v) || v < 0) {
-      stop(sprintf("%s must be a finite non-negative number.", nm))
+      stop(sprintf("%s must be a finite non-negative number.", nm),
+           call. = FALSE)
     }
   }
 
-  promoters_gr <- GenomicFeatures::promoters(txdb, upstream = upstream, downstream = downstream)
+  src <- "genome shortcut"
+  if (!is.null(tss)) {
+    if (methods::is(tss, "GRanges")) {
+      windows <- GenomicRanges::promoters(tss, upstream = upstream,
+                                          downstream = downstream)
+      src <- "user-supplied TSS GRanges"
+    } else if (methods::is(tss, "TxDb")) {
+      windows <- GenomicFeatures::promoters(tss, upstream = upstream,
+                                            downstream = downstream)
+      src <- "user-supplied TxDb"
+    } else {
+      stop("tss must be NULL, a GRanges of TSS positions, or a TxDb.",
+           call. = FALSE)
+    }
+  } else {
+    res <- .resolve_genome_resources(genome)
+    if (is.null(res$txdb)) {
+      stop("Promoter filtering requires a TxDb (genome = 'hg38'/'hg19'/'mm10' ",
+           "or a TxDb object).", call. = FALSE)
+    }
+    if (!requireNamespace("GenomicFeatures", quietly = TRUE)) {
+      stop("Please install 'GenomicFeatures'.")
+    }
+    # A chr-vs-1 naming mismatch would silently remove 0 promoter overlaps and
+    # leave every peak in place; enforce seqlevel compatibility.
+    .check_seqlevel_compatibility(gr, txdb = res$txdb, enforce = TRUE)
+    windows <- GenomicFeatures::promoters(res$txdb, upstream = upstream,
+                                          downstream = downstream)
+    src <- as.character(genome)[1]
+  }
 
-  filtered_gr <- IRanges::subsetByOverlaps(gr, promoters_gr, invert = TRUE)
+  shared <- intersect(as.character(GenomeInfoDb::seqlevels(gr)),
+                      as.character(GenomeInfoDb::seqlevels(windows)))
+  if (length(shared) == 0L) {
+    stop("No shared seqlevels between gr and the promoter/TSS windows. ",
+         "Check the genome build and chromosome naming (e.g. chr1 vs 1).",
+         call. = FALSE)
+  }
 
-  message(sprintf("Excluded %d peaks overlapping with promoters. %d peaks remaining.",
-                  length(gr) - length(filtered_gr), length(filtered_gr)))
+  # "overlap" = any intersection; "contained" = the peak lies fully inside a
+  # promoter/TSS window (ROSE semantics). findOverlaps(type=) is vectorised.
+  type <- if (identical(mode, "contained")) "within" else "any"
+  hits <- GenomicRanges::findOverlaps(gr, windows, type = type,
+                                      ignore.strand = TRUE)
+  removed <- sort(unique(S4Vectors::queryHits(hits)))
+  filtered_gr <- gr[setdiff(seq_len(length(gr)), removed)]
 
-  return(filtered_gr)
+  S4Vectors::metadata(filtered_gr)$promoter_exclusion <- list(
+    mode = mode, upstream = upstream, downstream = downstream,
+    source = src, n_input = length(gr), n_removed = length(removed),
+    order = "applied to peaks BEFORE stitch_epi_peaks() (ROSE -t order)",
+    timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE))
+
+  message(sprintf(
+    "Excluded %d peaks (%s; %s, window -%d/+%d bp). %d peaks remaining.",
+    length(removed), mode, src, upstream, downstream, length(filtered_gr)))
+  filtered_gr
 }
+
+
+#' Build a RefSeq (refGene) TSS set
+#'
+#' @description Returns a 1 bp, strand-aware transcription-start-site (TSS)
+#' GRanges from the UCSC \code{refGene} (RefSeq) track. This is the annotation
+#' family used by ROSE's bundled \code{<genome>_refseq.ucsc} tables, and is the
+#' appropriate source when a promoter/TSS exclusion must be comparable to ROSE.
+#' It is \strong{not} the UCSC \code{knownGene} set used by the built-in
+#' \code{genome} shortcuts of \code{\link{filter_promoter_peaks}}, so the two
+#' give different TSS sets.
+#'
+#' @param genome Genome assembly passed to
+#'   \code{txdbmaker::makeTxDbFromUCSC} (default "hg38").
+#' @param txdb Optional TxDb to use instead of downloading (must be RefSeq
+#'   based for ROSE comparability). When supplied, \code{genome} is only used
+#'   for provenance.
+#' @return A GRanges of 1 bp TSS positions with a \code{transcript} column.
+#' @examples
+#' \donttest{
+#' if (requireNamespace("txdbmaker", quietly = TRUE) &&
+#'     interactive()) {
+#'   tss <- tss_from_refgene("hg38")
+#'   length(tss)
+#' }
+#' }
+#' @export
+tss_from_refgene <- function(genome = "hg38", txdb = NULL) {
+  if (is.null(txdb)) {
+    if (!requireNamespace("txdbmaker", quietly = TRUE)) {
+      stop("tss_from_refgene() needs the 'txdbmaker' package to build a ",
+           "refGene TxDb; alternatively supply txdb = <TxDb>.", call. = FALSE)
+    }
+    txdb <- tryCatch(
+      txdbmaker::makeTxDbFromUCSC(genome = genome, tablename = "refGene"),
+      error = function(e) stop(
+        sprintf("Could not build a refGene TxDb for '%s': %s. ", genome,
+                conditionMessage(e)),
+        "Pass txdb = <TxDb>, or use tss_from_rose() with a local ROSE ",
+        "annotation file instead.", call. = FALSE))
+  } else if (!methods::is(txdb, "TxDb")) {
+    stop("txdb must be a TxDb object or NULL.", call. = FALSE)
+  }
+  if (!requireNamespace("GenomicFeatures", quietly = TRUE)) {
+    stop("Please install 'GenomicFeatures'.")
+  }
+  tx <- GenomicFeatures::transcripts(txdb)
+  tss <- GenomicRanges::promoters(tx, upstream = 0, downstream = 1)
+  S4Vectors::metadata(tss)$tss_source <- list(
+    source = "UCSC refGene (RefSeq)", genome = genome,
+    definition = "transcript 5' end, 1 bp, strand-aware", n = length(tss))
+  tss
+}
+
+
+#' Parse a ROSE RefSeq annotation file into a TSS set
+#'
+#' @description Reads ROSE's bundled UCSC refGene table
+#' (\code{<genome>_refseq.ucsc}, columns \code{name, chrom, strand, txStart,
+#' txEnd, ...}) and returns a 1 bp, strand-aware TSS GRanges using ROSE's
+#' definition (positive strand: \code{txStart}; negative strand: \code{txEnd}).
+#' Reusing the exact file that a ROSE run used guarantees an identical TSS set
+#' (see \href{https://github.com/younglab/ROSE}{younglab/ROSE}).
+#'
+#' @param genome Genome label, used for provenance only.
+#' @param file Path to a ROSE refGene annotation file (e.g.
+#'   \code{"hg38_refseq.ucsc"}).
+#' @return A GRanges of 1 bp TSS positions with \code{transcript} (and
+#'   \code{gene} when \code{name2} is present) columns.
+#' @examples
+#' f <- tempfile(fileext = ".ucsc")
+#' writeLines(c("#bin\tname\tchrom\tstrand\ttxStart\ttxEnd",
+#'              "0\tNM_000001\tchr1\t+\t1000\t2000",
+#'              "0\tNM_000002\tchr1\t-\t5000\t6000"), f)
+#' tss_from_rose("hg38", f)
+#' @export
+tss_from_rose <- function(genome, file) {
+  if (missing(genome) || !is.character(genome) || length(genome) != 1L) {
+    stop("genome must be a single character string.", call. = FALSE)
+  }
+  if (missing(file) || !is.character(file) || length(file) != 1L ||
+      !file.exists(file)) {
+    stop("file must be a path to an existing ROSE refGene annotation ",
+         "(e.g. 'hg38_refseq.ucsc').", call. = FALSE)
+  }
+  raw <- utils::read.delim(file, sep = "\t", header = FALSE,
+                           stringsAsFactors = FALSE, comment.char = "",
+                           check.names = FALSE, quote = "")
+  if (nrow(raw) > 0L && grepl("^#", as.character(raw[1, 1]))) {
+    colnames(raw) <- sub("^#", "", as.character(raw[1, ]))
+    raw <- raw[-1, , drop = FALSE]
+  }
+  req <- c("name", "chrom", "strand", "txStart", "txEnd")
+  if (!all(req %in% colnames(raw))) {
+    stop("The ROSE annotation must be a UCSC refGene table with columns ",
+         "'name','chrom','strand','txStart','txEnd'.", call. = FALSE)
+  }
+  pos <- ifelse(raw$strand == "-", as.numeric(raw$txEnd),
+                as.numeric(raw$txStart) + 1L)
+  tss <- GenomicRanges::GRanges(
+    seqnames = raw$chrom,
+    ranges = IRanges::IRanges(pos, pos),
+    strand = raw$strand,
+    transcript = raw$name)
+  if ("name2" %in% colnames(raw)) tss$gene <- raw$name2
+  S4Vectors::metadata(tss)$tss_source <- list(
+    source = "ROSE refGene table", genome = genome, file = file,
+    definition = "txStart (+ strand) / txEnd (- strand)", n = length(tss))
+  tss
+}
+
+
+#' Revert stitched regions that span more than two TSS (ROSE semantics)
+#'
+#' @description Implements the ROSE post-stitching safeguard: a stitched region
+#' whose span contains the TSS (+/- \code{tss_span}) of more than \code{max_tss}
+#' distinct genes is replaced by its original constituent peaks (ROSE records
+#' these as \code{MULTIPLE_TSS}). This prevents gene-dense loci from being
+#' merged into a single artefactual macro-domain. It is only relevant when TSS
+#' exclusion is enabled; ROSE applies it only for \code{-t != 0}.
+#'
+#' @param gr Stitched GRanges (e.g. from \code{\link{stitch_epi_peaks}}).
+#' @param tss TSS GRanges (e.g. from \code{\link{tss_from_refgene}} /
+#'   \code{\link{tss_from_rose}}). A \code{gene} or \code{transcript} column is
+#'   used to count distinct genes.
+#' @param original The constituent GRanges from which \code{gr} was stitched;
+#'   flagged regions are replaced by their overlapping constituents.
+#' @param max_tss Maximum number of distinct TSS allowed per stitched region
+#'   (default 2, i.e. revert when > 2 = 3 or more).
+#' @param tss_span Half-window (bp) used only for the TSS-counting overlap
+#'   (default 50, matching ROSE).
+#' @return A GRanges with flagged regions reverted to constituents. Provenance
+#'   is stored in \code{S4Vectors::metadata(x)$multi_tss_revert}.
+#' @examples
+#' orig <- GenomicRanges::GRanges("chr1",
+#'   IRanges::IRanges(c(1000, 1100, 1900, 2800, 2900, 4100), width = 50))
+#' stitched <- GenomicRanges::GRanges("chr1",
+#'   IRanges::IRanges(c(1000, 4000), c(3000, 4200)))
+#' tss <- GenomicRanges::GRanges("chr1",
+#'   IRanges::IRanges(c(1500, 2000, 2500, 4500), width = 1))
+#' tss$gene <- c("A", "B", "C", "D")
+#' # the first stitched region spans 3 TSS (A, B, C) -> reverted
+#' length(revert_multi_tss(stitched, tss, orig, max_tss = 2))
+#' @export
+revert_multi_tss <- function(gr, tss, original, max_tss = 2L, tss_span = 50L) {
+  if (!methods::is(gr, "GRanges") || !methods::is(tss, "GRanges") ||
+      !methods::is(original, "GRanges")) {
+    stop("gr, tss and original must be GRanges objects.", call. = FALSE)
+  }
+  if (length(max_tss) != 1L || !is.numeric(max_tss) || !is.finite(max_tss) ||
+      max_tss < 0 || max_tss != floor(max_tss)) {
+    stop("max_tss must be a single non-negative integer.", call. = FALSE)
+  }
+  if (length(tss_span) != 1L || !is.numeric(tss_span) ||
+      !is.finite(tss_span) || tss_span < 0) {
+    stop("tss_span must be a single non-negative number.", call. = FALSE)
+  }
+  if (length(gr) == 0L) return(gr)
+
+  tss_w <- GenomicRanges::promoters(tss, upstream = tss_span,
+                                    downstream = tss_span)
+  gene <- if (!is.null(tss$gene)) as.character(tss$gene)
+          else if (!is.null(tss$transcript)) as.character(tss$transcript)
+          else as.character(seq_len(length(tss)))
+  hits <- GenomicRanges::findOverlaps(gr, tss_w, ignore.strand = TRUE)
+  qh <- S4Vectors::queryHits(hits)
+  sh <- S4Vectors::subjectHits(hits)
+  n_gene <- integer(length(gr))
+  if (length(qh) > 0L) {
+    tab <- tapply(gene[sh], qh, function(x) length(unique(x)))
+    n_gene[as.integer(names(tab))] <- as.integer(tab)
+  }
+  flag <- which(n_gene > max_tss)
+
+  if (length(flag) == 0L) {
+    S4Vectors::metadata(gr)$multi_tss_revert <- list(
+      max_tss = max_tss, tss_span = tss_span, n_reverted = 0L)
+    return(gr)
+  }
+
+  keep <- gr[-flag]
+  names(keep) <- NULL
+  reverted <- lapply(flag, function(i) {
+    ov <- GenomicRanges::findOverlaps(original, gr[i], ignore.strand = TRUE)
+    cons <- original[unique(S4Vectors::queryHits(ov))]
+    names(cons) <- NULL
+    cons
+  })
+  out <- do.call(c, c(list(keep), reverted))
+  out <- GenomicRanges::sort(out)
+  S4Vectors::metadata(out)$multi_tss_revert <- list(
+    max_tss = max_tss, tss_span = tss_span, n_reverted = length(flag),
+    definition = paste("stitched regions spanning > max_tss distinct TSS",
+                       "were reverted to their constituent peaks"))
+  message(sprintf(
+    "Reverted %d stitched region(s) spanning > %d TSS; %d regions remain.",
+    length(flag), max_tss, length(out)))
+  out
+}
+
 
 
 #' Normalize Portrait Assays

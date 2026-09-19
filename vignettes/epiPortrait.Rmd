@@ -920,19 +920,35 @@ stitching (the order used by ROSE's `-t` option):
 preset <- get_mark_preset("H3K27ac")
 consensus <- get_consensus_peaks(peak_list, min_reps = 2)
 if (isTRUE(preset$exclude_promoter)) {
-  consensus <- filter_promoter_peaks(consensus, genome = "hg38",
-                                     upstream = 2500, downstream = 2500)
+  # RefSeq TSS (matches ROSE's <genome>_refseq.ucsc).
+  # For exact parity use tss_from_rose("hg38", "hg38_refseq.ucsc").
+  tss <- tss_from_refgene(genome = "hg38")
+  consensus <- filter_promoter_peaks(consensus, tss = tss,
+                                     upstream = 2500, downstream = 2500,
+                                     mode = "contained")
 }
 domains <- stitch_epi_peaks(consensus, stitch_distance = preset$stitch_distance)
+# ROSE additionally reverts stitched regions spanning > 2 gene TSS (only -t != 0)
+if (isTRUE(preset$exclude_promoter)) {
+  domains <- revert_multi_tss(domains, tss = tss, original = consensus,
+                              max_tss = 2)
+}
 ```
 
-Promoter exclusion is a **universe-definition** choice, not a hidden default:
-it changes the candidate domains, the cutoffs and any comparison to an external
-reference, so record the window and genome assembly in the Methods. Note that
-ROSE's own default is no TSS exclusion (`-t 0`); use a nonzero window only when
-a promoter-excluded universe is intended, and then compare against a matching
-reference. If no promoter filter is applied, H3K27ac `Intensity-Super` can be
-dominated by strong promoters rather than distal super-enhancers.
+Promoter/TSS exclusion is a **universe-definition** choice, not a hidden
+default: it changes the candidate domains, the cutoffs and any comparison to an
+external reference, so record the window, annotation source and genome assembly
+in the Methods.
+
+**ROSE equivalence.** ROSE removes constituent peaks **contained within**
+TSS +/- `tssWindow` and, after stitching, reverts any stitched region spanning
+more than two gene TSS. To match it: use a **RefSeq** TSS set
+(`tss_from_refgene()` or `tss_from_rose()` with ROSE's own annotation file),
+`mode = "contained"`, and `revert_multi_tss()`. The annotation source matters:
+the built-in `"hg38"` / `"hg19"` / `"mm10"` shortcuts resolve to UCSC
+**knownGene**, which is a different TSS set. ROSE's own default is `-t 0` (no
+TSS exclusion); if no promoter filter is applied, H3K27ac `Intensity-Super` can
+be dominated by strong promoters rather than distal super-enhancers.
 
 The internal classes remain `Intensity-Super` / `Breadth-Super` /
 `Dual-Super`; the `mark` argument only changes surface labels.

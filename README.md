@@ -350,20 +350,30 @@ preset <- get_mark_preset("H3K27ac")   # mark-aware defaults, e.g. stitch_distan
 
 ctrl_consensus <- get_consensus_peaks(ctrl_peak_list, min_reps = 2)
 treat_consensus <- get_consensus_peaks(treat_peak_list, min_reps = 2)
-candidate_domains <- GenomicRanges::reduce(c(ctrl_consensus, treat_consensus))
+consensus <- GenomicRanges::reduce(c(ctrl_consensus, treat_consensus))
 
 # Optional, but recommended for H3K27ac distal super-enhancer analysis:
-# exclude promoter-proximal peaks BEFORE stitching (ROSE -t order).
-# This is an explicit universe-definition step; the package does NOT apply it
+# exclude promoter/TSS regions BEFORE stitching (ROSE -t order). This is an
+# explicit universe-definition step; the package does NOT apply it
 # automatically, and ROSE's own default is no TSS exclusion (-t 0).
 if (isTRUE(preset$exclude_promoter)) {
-  candidate_domains <- filter_promoter_peaks(candidate_domains, genome = "hg38",
-                                             upstream = 2500, downstream = 2500)
+  # RefSeq (refGene) TSS, the annotation family used by ROSE. For exact
+  # parity, parse ROSE's own file with tss_from_rose("hg38", "hg38_refseq.ucsc").
+  tss <- tss_from_refgene(genome = "hg38")
+  consensus <- filter_promoter_peaks(consensus, tss = tss,
+                                     upstream = 2500, downstream = 2500,
+                                     mode = "contained")  # ROSE removes contained peaks
 }
 
+domains <- consensus
 if (preset$stitch_distance > 0) {
-  candidate_domains <- stitch_epi_peaks(candidate_domains,
-                                        stitch_distance = preset$stitch_distance)
+  domains <- stitch_epi_peaks(domains, stitch_distance = preset$stitch_distance)
+}
+
+# ROSE also reverts stitched regions spanning > 2 gene TSS (only when -t != 0).
+if (isTRUE(preset$exclude_promoter)) {
+  domains <- revert_multi_tss(domains, tss = tss, original = consensus,
+                              max_tss = 2)
 }
 ```
 
@@ -372,11 +382,15 @@ condition-specific loci fall below the replicate threshold; the
 per-condition-then-union pattern keeps them.
 
 `exclude_promoter` in the preset is **advisory**: no core function reads it.
-Promoter exclusion is a universe-definition choice (it strongly affects domain
-counts and any comparison to an external reference), so it is left explicit and
-must be recorded in the Methods. Note that ROSE's default is `-t 0` (no TSS
-exclusion); use a nonzero window only if you intend a promoter-excluded
-universe and compare against a matching reference.
+Promoter/TSS exclusion is a universe-definition choice (it strongly affects
+domain counts and any comparison to an external reference), so it is left
+explicit and must be recorded in the Methods. `tss_from_refgene()` /
+`tss_from_rose()` supply a **RefSeq** TSS set; the built-in `"hg38"` /
+`"hg19"` / `"mm10"` shortcuts of `filter_promoter_peaks()` resolve to UCSC
+**knownGene** and give a different TSS set. Note that ROSE's default is
+`-t 0` (no TSS exclusion); use a nonzero window (`mode = "contained"` plus
+`revert_multi_tss()`) only if you intend a promoter-excluded universe and
+compare against a matching reference.
 
 ### Module 2: Super-Domain Calling
 
