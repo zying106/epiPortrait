@@ -24,7 +24,10 @@ identity used to deduplicate contact support, so it must be supplied by the
 caller and is never generated. Optional standard columns are
 \code{gene_symbol}, \code{distance_to_tss_bp}, \code{overlap_bp},
 \code{domain_overlap_fraction}, \code{feature_overlap_fraction} and
-\code{contact_score}. Additional columns are retained for auditing.}
+\code{contact_score}. \code{transcript_id} and
+\code{transcript_tss_bp} can retain isoform-level provenance without
+changing the gene-level deduplication unit. Additional columns are retained
+for auditing.}
 
 \item{source}{A non-empty label identifying the external program or workflow
 (for example, \code{"ABC_loop_links"} or
@@ -66,6 +69,11 @@ calls, undercounting contact support.
 Importing annotations changes the candidate-gene universe. Stored
 enrichment results are therefore removed, with a warning, while expression
 summaries are retained.
+
+The rebuilt per-domain \code{top_candidate} uses the same evidence-driven
+ordering as \code{annotate_epi_domains()}: evidence tier first, followed by
+relation-appropriate overlap, contact-strength/support and TSS-distance
+evidence. Expression is not used for this default representative label.
 }
 \examples{
 data(example_se)

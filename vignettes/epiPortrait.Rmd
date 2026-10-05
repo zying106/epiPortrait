@@ -363,6 +363,23 @@ reference. `elbow` and `tangent` were near-equivalent on the raw scale, and
 native-peak `Breadth` (for example H3K4me3 broadPeak) was insensitive to the
 cutoff method.
 
+**Recommended per-mark settings.** These settings were stable across the
+ENCODE cell-line panels tested and are a reasonable starting point:
+
+- **H3K27ac** (narrowPeak): stitch enhancer domains (~12.5 kb), then call
+  `feature = "Intensity"` on the **raw** scale (`log_transform = FALSE`) with
+  `elbow` (or `tangent`, near-equivalent).
+- **H3K4me3** (broadPeak): use native-peak `Breadth` (`elbow`, no
+  enhancer-style stitching) as the main axis, with `Intensity` as a secondary,
+  relative axis on the **raw** scale.
+
+**Use the log scale with caution.** `log10(x + 1)` stabilises skewed rankings
+and stays the package default, but on heavy-tailed histone signal it can place
+the cutoff too low and inflate `Intensity-Super` in a sample-dependent way.
+Prefer the raw scale for super-domain calling and reserve `log_transform = TRUE`
+for specific needs (for example an input already on a log-like scale, or an
+explicitly requested exploratory ranking).
+
 All `Super` labels are relative to the candidate-domain universe and selected
 cutoff. They should not be interpreted as functional super-enhancers without
 independent evidence. Intensity is the area under the signal track, so it can
@@ -516,6 +533,21 @@ head(SummarizedExperiment::rowData(se)$primary_genomic_context)
 # long-format links: metadata(se)$domain_gene_links
 candidates <- get_domain_genes(se)
 head(candidates)
+```
+
+By default, annotation uses one strand-aware representative TSS per gene for
+backward compatibility. For analyses in which alternative promoters are part
+of the biological question, use `promoter_model = "transcript"`. Each
+transcript-level hit is retained in the raw `domain_gene_links` table through
+`transcript_id` and `transcript_tss_bp`; downstream candidate tables still
+collapse evidence to one domain--gene pair.
+
+```{r annotate-alternative-promoters, eval=FALSE}
+se_tx <- annotate_epi_domains(se, genome = "hg38",
+                              promoter_model = "transcript")
+head(S4Vectors::metadata(se_tx)$domain_gene_links[
+  , c("domain_id", "gene_id", "relation_type",
+      "transcript_id", "transcript_tss_bp")])
 ```
 
 External annotation programs can be used after their output has been converted

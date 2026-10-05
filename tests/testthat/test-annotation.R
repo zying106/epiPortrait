@@ -24,6 +24,34 @@ make_tiny_txdb <- function() {
   txdb
 }
 
+# one gene with two distinct transcript TSS positions (+ strand)
+make_multi_tss_txdb <- function() {
+  skip_if_not_installed("txdbmaker")
+  gr <- GenomicRanges::GRanges(
+    "chr1",
+    IRanges::IRanges(start = c(1000, 1000, 7000),
+                     end = c(10000, 3000, 10000)),
+    strand = "+")
+  S4Vectors::mcols(gr)$type <- c("gene", "transcript", "transcript")
+  S4Vectors::mcols(gr)$ID <- c("gene_multi", "tx_primary", "tx_alt")
+  S4Vectors::mcols(gr)$Parent <- c(NA_character_, "gene_multi", "gene_multi")
+  txdbmaker::makeTxDbFromGRanges(gr)
+}
+
+make_multi_tss_se <- function() {
+  domains <- GenomicRanges::GRanges(
+    "chr1", IRanges::IRanges(6950, 7050),
+    seqinfo = GenomeInfoDb::Seqinfo("chr1", 100000))
+  se <- SummarizedExperiment::SummarizedExperiment(
+    assays = list(Intensity = matrix(1, 1, 1),
+                  SignalDispersion = matrix(1, 1, 1)),
+    rowRanges = domains)
+  rownames(se) <- "epiDomain_alt_promoter"
+  colnames(se) <- "S1"
+  colData(se)$Condition <- "Control"
+  se
+}
+
 # helper: minimal SE with 4 domains overlapping the synthetic genes
 make_anno_se <- function() {
   suppressWarnings({
@@ -53,7 +81,9 @@ test_that("annotate_epi_domains adds the documented rowData columns + links", {
                     "fully_contained_gene_count", "n_bedpe_contact_gene",
                     "bedpe_contact_score", "bedpe_contact_score_max",
                     "bedpe_contact_score_mean", "bedpe_contact_score_n",
-                    "top_candidate_gene_symbol") %in% colnames(rowData(se))))
+                    "top_candidate_gene_symbol", "top_candidate_gene_id",
+                    "top_candidate_relation",
+                    "top_candidate_evidence_tier") %in% colnames(rowData(se))))
   expect_false(is.null(S4Vectors::metadata(se)$domain_gene_links))
   expect_false(is.null(S4Vectors::metadata(se)$annotation_provenance))
   # every domain must have a primary context
@@ -74,6 +104,52 @@ test_that("genome resolver handles built-in and custom", {
 test_that("annotate_epi_domains rejects unknown genome without TxDb", {
   se <- make_anno_se()
   expect_error(annotate_epi_domains(se, genome = "rn7"), "TxDb")
+})
+
+test_that("transcript promoter model retains alternative-TSS evidence", {
+  txdb <- make_multi_tss_txdb()
+  input <- make_multi_tss_se()
+
+  default <- annotate_epi_domains(
+    input, genome = txdb, promoter_upstream = 100,
+    promoter_downstream = 100)
+  gene <- annotate_epi_domains(
+    input, genome = txdb, promoter_upstream = 100,
+    promoter_downstream = 100, promoter_model = "gene")
+  transcript <- annotate_epi_domains(
+    input, genome = txdb, promoter_upstream = 100,
+    promoter_downstream = 100, promoter_model = "transcript")
+
+  # Backward-compatible default: explicit gene mode gives the same annotation.
+  expect_equal(S4Vectors::metadata(default)$domain_gene_links,
+               S4Vectors::metadata(gene)$domain_gene_links)
+  expect_equal(rowData(default)$promoter_overlap_gene_count,
+               rowData(gene)$promoter_overlap_gene_count)
+
+  # The alternative transcript begins at 7000 and is the promoter/TSS hit.
+  expect_equal(rowData(gene)$promoter_overlap_gene_count, 0L)
+  expect_equal(rowData(transcript)$promoter_overlap_gene_count, 1L)
+  raw <- S4Vectors::metadata(transcript)$domain_gene_links
+  promoter <- raw[raw$relation_type == "promoter_overlap", , drop = FALSE]
+  nearest <- raw[raw$relation_type == "nearest_tss", , drop = FALSE]
+  expect_equal(promoter$transcript_id, "tx_alt")
+  expect_equal(promoter$transcript_tss_bp, 7000L)
+  expect_equal(nearest$transcript_id, "tx_alt")
+  expect_equal(nearest$distance_to_tss_bp, 0)
+
+  # Transcript evidence is auditable, while public candidate units stay genes.
+  dedup <- S4Vectors::metadata(transcript)$domain_gene_links_dedup
+  expect_equal(sum(dedup$gene_id == "gene_multi"), 1L)
+  provenance <- S4Vectors::metadata(transcript)$annotation_provenance
+  expect_equal(provenance$promoter_model, "transcript")
+  expect_equal(provenance$n_tss_features, 2L)
+})
+
+test_that("annotate_epi_domains validates promoter_model", {
+  expect_error(
+    annotate_epi_domains(make_multi_tss_se(), genome = make_multi_tss_txdb(),
+                         promoter_model = "isoform"),
+    "should be one of")
 })
 
 test_that("nearest TSS and counts are consistent", {
@@ -746,4 +822,73 @@ test_that("native annotation views are exactly the shared rebuild", {
   expect_equal(rowData(se2), rowData(se))
   expect_equal(S4Vectors::metadata(se2)$domain_gene_links_dedup, dedup)
   expect_equal(S4Vectors::metadata(se2)$annotation_summary, summary_tbl)
+})
+
+test_that("top candidate uses quantitative evidence and is row-order invariant", {
+  se <- make_anno_se()[1:3, ]
+  dom <- rownames(se)
+  links <- data.frame(
+    domain_id = rep(dom, each = 2),
+    gene_id = rep(c("gene_alpha", "gene_zeta"), 3),
+    gene_symbol = rep(c("ALPHA", "ZETA"), 3),
+    relation_type = rep(c("promoter_overlap",
+                          "bedpe_promoter_contact", "nearest_tss"), each = 2),
+    overlap_bp = c(100, 300, NA, NA, NA, NA),
+    feature_overlap_fraction = c(0.2, 0.6, NA, NA, NA, NA),
+    distance_to_tss_bp = c(NA, NA, NA, NA, 500, 100),
+    bedpe_record_id = c(NA, NA, "loop_low", "loop_high", NA, NA),
+    contact_score = c(NA, NA, 2, 9, NA, NA),
+    stringsAsFactors = FALSE)
+
+  a <- import_domain_annotations(se, links, source = "ranking_test")
+  b <- import_domain_annotations(se, links[nrow(links):1, ],
+                                 source = "ranking_test")
+  sa <- S4Vectors::metadata(a)$annotation_summary
+  sb <- S4Vectors::metadata(b)$annotation_summary
+
+  # Larger promoter overlap, stronger contact and closer TSS all select ZETA,
+  # despite ALPHA sorting first alphabetically and appearing first in one input.
+  expect_equal(sa$top_candidate_gene_id,
+               rep("gene_zeta", length(dom)))
+  expect_equal(sa$top_candidate_relation,
+               c("promoter_overlap", "bedpe_promoter_contact", "nearest_tss"))
+  expect_equal(sa$top_candidate_evidence_tier, c(4L, 3L, 2L))
+  expect_equal(sa[, c("top_candidate_gene_id", "top_candidate_relation",
+                      "top_candidate_evidence_tier")],
+               sb[, c("top_candidate_gene_id", "top_candidate_relation",
+                      "top_candidate_evidence_tier")])
+  expect_equal(nrow(S4Vectors::metadata(a)$domain_gene_links), nrow(links))
+
+  # The public candidate extractor uses the same quantitative tie-breakers;
+  # top-k selection must not change when raw evidence rows are reversed.
+  ca <- get_domain_genes(a, unique_genes = FALSE, max_per_domain = 1)
+  cb <- get_domain_genes(b, unique_genes = FALSE, max_per_domain = 1)
+  expect_equal(ca$gene_id[match(dom, ca$domain_id)],
+               rep("gene_zeta", length(dom)))
+  expect_equal(ca[, c("domain_id", "gene_id")],
+               cb[, c("domain_id", "gene_id")])
+
+  dedup <- S4Vectors::metadata(a)$domain_gene_links_dedup
+  expect_true(all(c("promoter_overlap_bp", "max_overlap_bp",
+                    "max_feature_overlap_fraction") %in% colnames(dedup)))
+})
+
+test_that("same-tier best relation is deterministic", {
+  se <- make_anno_se()[1, ]
+  links <- data.frame(
+    domain_id = rep(rownames(se), 2),
+    gene_id = rep("gene_one", 2),
+    gene_symbol = rep("ONE", 2),
+    relation_type = c("gene_body_overlap", "fully_contained"),
+    overlap_bp = c(100, 80),
+    feature_overlap_fraction = c(0.5, 1),
+    stringsAsFactors = FALSE)
+
+  a <- import_domain_annotations(se, links, source = "relation_test")
+  b <- import_domain_annotations(se, links[2:1, ], source = "relation_test")
+  da <- S4Vectors::metadata(a)$domain_gene_links_dedup
+  db <- S4Vectors::metadata(b)$domain_gene_links_dedup
+
+  expect_equal(da$best_relation, "fully_contained")
+  expect_equal(da$best_relation, db$best_relation)
 })

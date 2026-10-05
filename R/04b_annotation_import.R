@@ -13,8 +13,9 @@
 .annotation_link_columns <- function() {
   c("domain_id", "gene_id", "gene_symbol", "relation_type",
     "distance_to_tss_bp", "overlap_bp", "domain_overlap_fraction",
-    "feature_overlap_fraction", "bedpe_record_id", "evidence_source",
-    "contact_score", "annotation_source")
+    "feature_overlap_fraction", "transcript_id", "transcript_tss_bp",
+    "bedpe_record_id", "evidence_source", "contact_score",
+    "annotation_source")
 }
 
 .standardize_annotation_links <- function(x, source) {
@@ -54,16 +55,19 @@
     overlap_bp = NA_real_,
     domain_overlap_fraction = NA_real_,
     feature_overlap_fraction = NA_real_,
+    transcript_id = NA_character_,
+    transcript_tss_bp = NA_real_,
     bedpe_record_id = NA_character_,
     contact_score = NA_real_)
   for (nm in names(defaults)) {
     if (!nm %in% colnames(x)) x[[nm]] <- defaults[[nm]]
   }
   x$gene_symbol <- as.character(x$gene_symbol)
+  x$transcript_id <- as.character(x$transcript_id)
   x$bedpe_record_id <- as.character(x$bedpe_record_id)
   numeric_columns <- c("distance_to_tss_bp", "overlap_bp",
                        "domain_overlap_fraction", "feature_overlap_fraction",
-                       "contact_score")
+                       "transcript_tss_bp", "contact_score")
   for (nm in numeric_columns) {
     old <- x[[nm]]
     if (is.numeric(old)) {
@@ -91,6 +95,10 @@
   }
   if (any(x$overlap_bp < 0, na.rm = TRUE)) {
     stop("annotations$overlap_bp must be non-negative.", call. = FALSE)
+  }
+  if (any(x$transcript_tss_bp < 1, na.rm = TRUE)) {
+    stop("annotations$transcript_tss_bp must be a positive 1-based coordinate.",
+         call. = FALSE)
   }
   for (nm in c("domain_overlap_fraction", "feature_overlap_fraction")) {
     if (any(x[[nm]] < 0 | x[[nm]] > 1, na.rm = TRUE)) {
@@ -146,7 +154,10 @@
 #'   caller and is never generated. Optional standard columns are
 #'   \code{gene_symbol}, \code{distance_to_tss_bp}, \code{overlap_bp},
 #'   \code{domain_overlap_fraction}, \code{feature_overlap_fraction} and
-#'   \code{contact_score}. Additional columns are retained for auditing.
+#'   \code{contact_score}. \code{transcript_id} and
+#'   \code{transcript_tss_bp} can retain isoform-level provenance without
+#'   changing the gene-level deduplication unit. Additional columns are retained
+#'   for auditing.
 #' @param source A non-empty label identifying the external program or workflow
 #'   (for example, \code{"ABC_loop_links"} or
 #'   \code{"custom_loop_workflow"}).
@@ -174,6 +185,11 @@
 #'   Importing annotations changes the candidate-gene universe. Stored
 #'   enrichment results are therefore removed, with a warning, while expression
 #'   summaries are retained.
+#'
+#'   The rebuilt per-domain \code{top_candidate} uses the same evidence-driven
+#'   ordering as \code{annotate_epi_domains()}: evidence tier first, followed by
+#'   relation-appropriate overlap, contact-strength/support and TSS-distance
+#'   evidence. Expression is not used for this default representative label.
 #'
 #' @return The updated SummarizedExperiment with rebuilt raw, pair-level and
 #'   per-domain annotation tables and import provenance.

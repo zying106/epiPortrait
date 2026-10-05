@@ -453,12 +453,26 @@ scale). This is an optional benchmark setting, not the package's primary
 workflow. Use the reference ROSE implementation for claims about numerical
 agreement with ROSE.
 
-**Intensity ranking scale (benchmark).** On heavy-tailed H3K27ac Intensity, the
-default `log10(x + 1)` ranking can place the cutoff too low and over-call
-`Intensity-Super`. Ranking on the raw scale (`log_transform = FALSE`) agrees
-much more closely with a ROSE super-enhancer reference. `elbow` and `tangent`
-were near-equivalent on the raw scale, and native-peak `Breadth` (for example
-H3K4me3 broadPeak) was insensitive to the cutoff method.
+**Recommended per-mark settings (benchmark summary).** The settings below were
+stable across the ENCODE cell-line panels tested; they are starting points, not
+hard rules.
+
+- **H3K27ac** (narrowPeak): stitch enhancer domains (~12.5 kb), then call
+  `feature = "Intensity"` on the **raw** scale (`log_transform = FALSE`) with
+  `elbow` (or `tangent`, which is near-equivalent).
+- **H3K4me3** (broadPeak): treat native-peak `Breadth` as the main axis
+  (`elbow`; no enhancer-style stitching), with `Intensity` as a secondary,
+  relative axis on the **raw** scale.
+
+**Use the log scale with caution.** `log10(x + 1)` remains the package
+convention for stabilising skewed rankings, but on heavy-tailed histone signal
+it can place the cutoff too low and inflate `Intensity-Super` in a
+sample-dependent way. Prefer the raw scale (`log_transform = FALSE`) for
+super-domain calling, and reserve `log_transform = TRUE` for specific needs
+(for example an input already on a log-like scale, or an explicitly requested
+exploratory ranking). `elbow` and `tangent` were near-equivalent on the raw
+scale, and native-peak `Breadth` (for example H3K4me3 broadPeak) was
+insensitive to the cutoff method.
 
 **Breadth-Super is a peak-level call.** Each replicate's genome-wide eligible
 native PeakWidth distribution is cut by an elbow/inflection; broad peaks are
@@ -531,6 +545,12 @@ candidates <- get_domain_genes(se, group = "Control")
 head(metadata(se)$annotation_summary)
 head(metadata(se)$domain_gene_links_dedup)
 head(metadata(se)$domain_gene_links)
+
+# Optional: retain evidence from every alternative-transcript promoter/TSS.
+# The raw table gains transcript_id/transcript_tss_bp; candidate genes remain
+# deduplicated at the domain-gene level. The default remains promoter_model="gene".
+se_tx <- annotate_epi_domains(se, genome = "hg38",
+                              promoter_model = "transcript")
 
 # External annotation tools are supported through a standard long table.
 # Convert software-specific labels before import; epiPortrait does not guess

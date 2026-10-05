@@ -64,10 +64,10 @@ domain-gene pairs, preserving the original behaviour.}
 \item{rank_by}{Character. Primary ordering key for \code{candidate_priority}.
 \itemize{
 \item \code{"tier"} (default): evidence hierarchy first (see Details),
-expression as tie-breaker — the original behaviour.
+then relation-appropriate quantitative support and expression.
 \item \code{"bedpe_score"}: descending 3D contact strength
-(\code{bedpe_contact_score}) first, then the evidence tier and
-expression as tie-breakers. Requires that
+(\code{bedpe_contact_score}) first, then the evidence tier,
+relation-appropriate quantitative support and expression. Requires
 \code{annotate_epi_domains()} was run with
 \code{bedpe_score_col}; pairs without a usable score fall back to
 the tier ordering. This implements contact-strength-first target
@@ -77,7 +77,8 @@ prioritization (dominant-loop style).
 \value{
 A data.frame: domain_id, gene_id, gene_symbol, relation_types,
 evidence_tier (0-4 ordinal evidence strength), bedpe_supported,
-bedpe_support_count, bedpe_contact_score,
+bedpe_support_count, bedpe_contact_score, bedpe_contact_score_max,
+promoter_overlap_bp, max_overlap_bp, max_feature_overlap_fraction,
 nearest_tss_distance_bp (strand-aware SIGNED distance, matching
 \code{annotation_summary}; NA when the pair has no nearest-TSS evidence),
 expression_value, expression_status, expression_rank (contiguous rank over

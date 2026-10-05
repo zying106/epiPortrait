@@ -66,3 +66,6 @@ resolve_*.sh
 *.list
 primary_*.txt
 HepG2_ENCODE_ChIP_curated.tsv
+# Manuscript drafts and local scratch
+*.docx
+tmp/

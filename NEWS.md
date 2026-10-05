@@ -1,5 +1,32 @@
 # epiPortrait 0.99.4
 
+* Documentation: added a concise per-mark parameter recommendation from the
+  ENCODE cell-line benchmarks. For H3K27ac use narrowPeak + enhancer-domain
+  stitching (~12.5 kb) + `Intensity` on the raw scale (`log_transform = FALSE`)
+  with `elbow` (or near-equivalent `tangent`); for H3K4me3 use broadPeak
+  `Breadth` (`elbow`, no enhancer-style stitching) as the main axis with
+  `Intensity` as a secondary raw-scale axis. The `log10(x + 1)` default is
+  retained but flagged as use-with-caution on heavy-tailed histone signal, to be
+  reserved for specific needs (an already log-like input or an explicitly
+  requested exploratory ranking). Documentation only; no behaviour change.
+
+* Per-domain `top_candidate_gene` labels are now selected by quantitative
+  evidence within the existing evidence-tier hierarchy. Ties use promoter
+  overlap, BEDPE contact strength/support, TSS proximity and overlap
+  fraction/length before the final stable gene-ID fallback; expression is not
+  used by the default summary. The summary and `rowData` now also expose the
+  selected gene ID, relation and evidence tier. Raw domain-gene links remain
+  unchanged, and native and externally imported annotations share the rule.
+  `get_domain_genes()` applies the same quantitative tie-breakers, making
+  `max_per_domain` selection invariant to raw link-row order.
+
+* `annotate_epi_domains()` now supports an opt-in transcript-level TSS/promoter
+  model through `promoter_model = "transcript"`. Raw relationship evidence
+  records `transcript_id` and `transcript_tss_bp`, including BEDPE promoter
+  contacts, while summary and candidate tables remain gene-level. The default
+  `promoter_model = "gene"` preserves existing results, and the new argument is
+  appended to the function signature to preserve positional API compatibility.
+
 * Added an explicit, ROSE-compatible TSS/promoter exclusion toolkit.
   `filter_promoter_peaks()` gains `mode = c("overlap", "contained")` (default
   `"overlap"`, legacy behaviour) and a `tss =` argument that accepts a TSS

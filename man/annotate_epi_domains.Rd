@@ -18,7 +18,8 @@ annotate_epi_domains(
   expression = NULL,
   expression_type = NULL,
   aggregate_fun = "median",
-  gene_id_keytype = NULL
+  gene_id_keytype = NULL,
+  promoter_model = c("gene", "transcript")
 )
 }
 \arguments{
@@ -89,13 +90,20 @@ NULL.}
 \item{gene_id_keytype}{Character or NULL. OrgDb keytype for the gene IDs
 (default "ENTREZID" for built-in UCSC genomes; required for custom TxDbs
 using other ID systems such as ENSEMBL / TAIR / FlyBase).}
+
+\item{promoter_model}{Character. \code{"gene"} (default) uses one
+representative strand-aware TSS per TxDb gene and preserves historical
+results. \code{"transcript"} uses every gene-linked transcript TSS and
+retains transcript provenance in the raw link table. Appended to the API
+to preserve existing positional calls.}
 }
 \value{
 \code{se} with rowData columns: primary_genomic_context,
 nearest_tss_gene_id, nearest_tss_gene_symbol,
 nearest_tss_distance_bp (strand-aware SIGNED distance from the domain to
-the representative TSS; negative means the domain is upstream of a + gene
-or downstream of a - gene; 0 when the TSS is inside the domain),
+the nearest TSS under \code{promoter_model}; negative means the domain is
+upstream of a + feature or downstream of a - feature; 0 when the TSS is
+inside the domain),
 promoter_overlap_gene_count, gene_body_overlap_gene_count,
 fully_contained_gene_count, n_bedpe_contact_gene, bedpe_contact_score,
 bedpe_contact_score_max, bedpe_contact_score_mean, bedpe_contact_score_n.
@@ -106,12 +114,19 @@ contacts without a usable score (including runs without
 \code{bedpe_contact_score_n} is the number of UNIQUE supporting BEDPE
 records (0 when there is no BEDPE evidence), so it mirrors
 \code{bedpe_support_count} and stays interpretable without a score column.
-Also adds top_candidate_gene_symbol; the annotation result is exposed as a
-three-level structure in metadata:
+Also adds \code{top_candidate_gene_symbol},
+\code{top_candidate_gene_id}, \code{top_candidate_relation} and
+\code{top_candidate_evidence_tier}. The representative candidate is chosen
+by evidence tier first, then relation-appropriate quantitative support:
+promoter overlap, BEDPE contact strength/support, TSS proximity and overlap
+fraction/length. Gene ID is only the final deterministic tie-breaker;
+expression is never used by this default summary. The annotation result is
+exposed as a three-level structure in metadata:
 \itemize{
 \item \code{metadata(se)$annotation_summary} — ONE ROW PER DOMAIN master
 table (nearest gene, per-evidence overlap/gene counts, number of
-BEDPE-contacted genes, and a representative top candidate gene).
+BEDPE-contacted genes, and an evidence-ranked representative
+candidate gene).
 \item \code{metadata(se)$domain_gene_links_dedup} — ONE ROW PER
 domain-gene pair, with summarised \code{relation_types},
 \code{evidence_sources} and a \code{best_relation} label.
@@ -129,18 +144,21 @@ columns plus 6 BEDPE-contact and candidate columns) and stores a long-format
 domain-gene link table in \code{metadata(se)$domain_gene_links}.
 }
 \details{
-\strong{Representative gene-level TSS.} epiPortrait uses one strand-aware
-5' boundary per gene derived from \code{GenomicFeatures::genes(txdb)} (start
-for +, end for -) as the representative TSS for compact domain annotation. It
-does not enumerate every alternative-transcript TSS of a gene; the compact
-\code{nearest_tss_distance_bp} is therefore a gene-level proximity measure.
+\strong{Promoter/TSS model.} The default \code{promoter_model = "gene"} preserves
+the compact historical model: one strand-aware 5' boundary per gene derived
+from \code{GenomicFeatures::genes(txdb)}. Set
+\code{promoter_model = "transcript"} to use every gene-linked transcript
+returned by \code{GenomicFeatures::transcriptsBy(txdb, by = "gene")}. In
+transcript mode, alternative promoters can each contribute raw evidence;
+\code{metadata(se)$domain_gene_links} records \code{transcript_id} and
+\code{transcript_tss_bp}, while the deduplicated table remains one row per
+domain-gene pair. The compact nearest-TSS columns report the nearest feature
+under the selected model.
 
-\strong{Promoter models.} \code{filter_promoter_peaks()} uses
-\code{GenomicFeatures::promoters(txdb)} (transcript-level promoter set), while
-\code{annotate_epi_domains()} uses a gene-level representative-TSS promoter
-window. The two are not the same promoter universe; in an enhancer workflow,
-promoter exclusion and \code{promoter_overlap_gene_count} should not be
-assumed to use identical definitions.
+\code{filter_promoter_peaks()} defines an upstream peak universe and remains
+independent of this annotation choice. To use the same transcript-level
+biological model at both stages, use a TxDb-derived transcript TSS set for
+filtering and \code{promoter_model = "transcript"} here.
 }
 \examples{
 data(example_se)
