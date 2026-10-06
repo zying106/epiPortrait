@@ -1410,6 +1410,16 @@ annotate_epi_domains <- function(se, genome = "hg38", txdb = NULL, anno_db = NUL
 #'           the tier ordering. This implements contact-strength-first target
 #'           prioritization (dominant-loop style).
 #'   }
+#' @param overlap_tiebreak Logical. Whether to break ties between otherwise
+#'   equally-ranked pairs using overlap magnitude (\code{max_feature_overlap_fraction}
+#'   then \code{max_overlap_bp}). Defaults to TRUE, which preserves the historic
+#'   ordering. Set to FALSE to rank solely on the primary evidence keys
+#'   (tier/contact strength, promoter overlap, contact score, support count and
+#'   nearest-TSS distance), so that two pairs with identical primary evidence
+#'   are separated deterministically by \code{gene_id} then \code{domain_id}
+#'   rather than by a larger overlap. This makes \code{candidate_priority}
+#'   insensitive to feature-boundary/overlap-definition changes in
+#'   \code{annotate_epi_domains()}. Must be a single non-missing logical.
 #' @return A data.frame: domain_id, gene_id, gene_symbol, relation_types,
 #'   evidence_tier (0-4 ordinal evidence strength), bedpe_supported,
 #'   bedpe_support_count, bedpe_contact_score, bedpe_contact_score_max,
@@ -1437,9 +1447,12 @@ get_domain_genes <- function(se, domains = NULL,
                                getOption("epiPortrait.nearest_tss_cutoff_bp",
                                          10000),
                              max_per_domain = NULL,
-                             rank_by = c("tier", "bedpe_score")) {
+                             rank_by = c("tier", "bedpe_score"),
+                             overlap_tiebreak = TRUE) {
   expression_priority <- match.arg(expression_priority)
   rank_by <- match.arg(rank_by)
+  if (!is.logical(overlap_tiebreak) || length(overlap_tiebreak) != 1L || is.na(overlap_tiebreak))
+    stop("overlap_tiebreak must be TRUE or FALSE.", call. = FALSE)
   if (!is.null(max_per_domain)) {
     if (length(max_per_domain) != 1L || !is.numeric(max_per_domain) ||
         !is.finite(max_per_domain) || max_per_domain < 1) {
@@ -1667,17 +1680,18 @@ get_domain_genes <- function(se, domains = NULL,
     distance_key,
     desc_key(out$max_feature_overlap_fraction),
     desc_key(out$max_overlap_bp))
+  if (!overlap_tiebreak) quantitative_keys <- quantitative_keys[seq_len(5L)]
   if (rank_by == "bedpe_score") {
     # Contact score remains the primary key in this explicit mode. An unscored
     # contact is neutral (0), not weaker than the absence of a contact.
     ord <- do.call(order, c(
       list(desc_key(out$bedpe_contact_score, missing = 0), -order_score),
-      quantitative_keys[c(1L, 3L, 4L, 5L, 6L, 7L)],
-      list(-expr_tie, out$gene_id, na.last = TRUE)))
+      quantitative_keys[intersect(c(1L, 3L, 4L, 5L, 6L, 7L), seq_along(quantitative_keys))],
+      list(-expr_tie, out$gene_id, out$domain_id, na.last = TRUE)))
   } else {
     ord <- do.call(order, c(
       list(-order_score), quantitative_keys,
-      list(-expr_tie, out$gene_id, na.last = TRUE)))
+      list(-expr_tie, out$gene_id, out$domain_id, na.last = TRUE)))
   }
   priority <- integer(nrow(out))
   priority[ord] <- seq_along(ord)

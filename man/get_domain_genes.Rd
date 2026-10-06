@@ -15,7 +15,8 @@ get_domain_genes(
   unique_genes = TRUE,
   nearest_tss_cutoff_bp = getOption("epiPortrait.nearest_tss_cutoff_bp", 10000),
   max_per_domain = NULL,
-  rank_by = c("tier", "bedpe_score")
+  rank_by = c("tier", "bedpe_score"),
+  overlap_tiebreak = TRUE
 )
 }
 \arguments{
@@ -73,6 +74,17 @@ relation-appropriate quantitative support and expression. Requires
 the tier ordering. This implements contact-strength-first target
 prioritization (dominant-loop style).
 }}
+
+\item{overlap_tiebreak}{Logical. Whether to break ties between otherwise
+equally-ranked pairs using overlap magnitude (\code{max_feature_overlap_fraction}
+then \code{max_overlap_bp}). Defaults to TRUE, which preserves the historic
+ordering. Set to FALSE to rank solely on the primary evidence keys
+(tier/contact strength, promoter overlap, contact score, support count and
+nearest-TSS distance), so that two pairs with identical primary evidence
+are separated deterministically by \code{gene_id} then \code{domain_id}
+rather than by a larger overlap. This makes \code{candidate_priority}
+insensitive to feature-boundary/overlap-definition changes in
+\code{annotate_epi_domains()}. Must be a single non-missing logical.}
 }
 \value{
 A data.frame: domain_id, gene_id, gene_symbol, relation_types,

@@ -254,6 +254,49 @@ test_that("get_domain_genes high expression does not override evidence", {
   expect_true(nrow(cand) >= 1)
 })
 
+test_that("overlap_tiebreak drops the secondary overlap keys but keeps the rank", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  gids <- names(GenomicFeatures::genes(txdb))
+  exp_wide <- matrix(c(80, 5, 30, 1, 0.2, 2, 3, 4),
+                     nrow = 4, dimnames = list(gids, c("C1", "T1")))
+  se <- annotate_epi_domains(se, genome = txdb, expression = exp_wide,
+                             expression_type = "TPM")
+  cand_default <- get_domain_genes(se, group = "Control")
+  cand_no_overlap <- get_domain_genes(se, group = "Control",
+                                      overlap_tiebreak = FALSE)
+  # same domain-gene pairs, still a contiguous 1..n rank
+  expect_setequal(paste(cand_no_overlap$domain_id, cand_no_overlap$gene_id),
+                  paste(cand_default$domain_id, cand_default$gene_id))
+  expect_true(all(cand_no_overlap$candidate_priority ==
+                    seq_len(nrow(cand_no_overlap))))
+  # validation: must be a single non-missing logical
+  expect_error(get_domain_genes(se, overlap_tiebreak = NA), "overlap_tiebreak")
+  expect_error(get_domain_genes(se, overlap_tiebreak = "yes"), "overlap_tiebreak")
+  expect_error(get_domain_genes(se, overlap_tiebreak = c(TRUE, FALSE)),
+               "overlap_tiebreak")
+})
+
+test_that("overlap_tiebreak = FALSE is safe in bedpe_score mode", {
+  txdb <- make_tiny_txdb()
+  se <- make_anno_se()
+  bedpe_df <- data.frame(
+    chrom1 = "chr1", start1 = 34999, end1 = 45000,  # inside domain3
+    chrom2 = "chr1", start2 = 59999, end2 = 61000,  # gene4 promoter
+    score = c(7.5),
+    stringsAsFactors = FALSE)
+  se <- annotate_epi_domains(se, genome = txdb, bedpe = bedpe_df,
+                             bedpe_score_col = "score")
+  # trimming the key list must not drop/NA the reused indices (regression)
+  cand <- get_domain_genes(se, rank_by = "bedpe_score",
+                           overlap_tiebreak = FALSE)
+  expect_true(nrow(cand) > 0)
+  expect_true(all(cand$candidate_priority == seq_len(nrow(cand))))
+  best_sc <- max(cand$bedpe_contact_score, na.rm = TRUE)
+  expect_equal(min(cand$candidate_priority[cand$bedpe_contact_score == best_sc],
+                   na.rm = TRUE), 1L)
+})
+
 # ---- P1-12: dangerous annotation edge cases (review 2026-08-10) --------------
 
 # two overlapping genes must NOT be merged into one pseudo-gene
