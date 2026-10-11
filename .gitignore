@@ -68,4 +68,5 @@ primary_*.txt
 HepG2_ENCODE_ChIP_curated.tsv
 # Manuscript drafts and local scratch
 *.docx
+draft106-article/
 tmp/
