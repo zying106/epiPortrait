@@ -25,7 +25,8 @@
 #' Plot Hockey Stick Curve for Super-Domain Identification
 #'
 #' @description Generates a ranking plot for super-domain identification. Domains are ranked by
-#' their feature value; super-domains are highlighted and the cutoff (and, when
+#' their feature value with rank 1 = highest (ROSE convention), so the x axis
+#' runs from the strongest/broadest domain at the left; super-domains are highlighted and the cutoff (and, when
 #' available, the replicate-cutoff stability band) is drawn from the object's
 #' stored provenance. In per-group mode the cutoff is shown as a descriptive
 #' median replicate cutoff, never as the unique biological decision boundary.
@@ -95,7 +96,7 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
     plot_df <- data.frame(
       Peak_ID = pc_s$NativePeakID[ord],
       Value = pc_s$PeakWidth[ord],
-      Rank = seq_len(nrow(pc_s)),
+      Rank = rev(seq_len(nrow(pc_s))),   # rank 1 = widest (ord is ascending)
       Type = ifelse(pc_s$PeakBroadCall[ord] == "Broad",
                     "Breadth_Super_Element", "Breadth_Typical"),
       stringsAsFactors = FALSE
@@ -123,7 +124,7 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
                               sum(!is.na(plot_df$Type) & plot_df$Type == super_type),
                               100 * sum(!is.na(plot_df$Type) & plot_df$Type == super_type) / nrow(plot_df),
                               nrow(plot_df)),
-           x = "Peak Width Rank", y = "Peak Width (bp)")
+           x = "Peak Width Rank (1 = widest)", y = "Peak Width (bp)")
     if (show_cutoff && is.finite(cutoff)) {
       p <- p + geom_hline(yintercept = cutoff, linetype = "dashed",
                           color = "grey25", linewidth = 0.6) +
@@ -248,7 +249,7 @@ plot_hockey_stick <- function(se, feature = "Intensity", label_genes = FALSE,
          else sprintf("%s  - %s (per-group replicate-aware)  -  %d super (%.1f%%)",
                       display_label, group, n_super,
                       100 * n_super / nrow(plot_df)),
-         x = paste(feature, "Rank"),
+         x = paste0(feature, " Rank (1 = highest)"),
          y = paste(feature, "Value"))
 
   # Cutoff guide and replicate-cutoff stability band, read from the object's

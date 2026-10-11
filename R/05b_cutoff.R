@@ -219,7 +219,11 @@ find_hockey_inflection <- function(x, method = c("elbow", "tangent"),
   rank_df <- data.frame(Peak_ID = pid,
                          Value = val_vector, stringsAsFactors = FALSE)
   rank_df <- rank_df[order(rank_df$Value, rank_df$Peak_ID), ]
-  rank_df$Cumulative_Rank <- seq_len(nrow(rank_df))
+  # Rank 1 = LARGEST feature value (ROSE convention). rank_df is sorted
+  # ascending, so assign ranks in reverse; the inflection detection still reads
+  # the ascending Value curve, but the exported <feature>_Rank columns and
+  # plot_hockey_stick()'s x axis now follow "rank 1 = strongest/broadest".
+  rank_df$Cumulative_Rank <- rev(seq_len(nrow(rank_df)))
 
   n <- nrow(rank_df)
   call_status <- "called"

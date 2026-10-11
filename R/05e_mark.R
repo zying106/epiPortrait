@@ -61,7 +61,7 @@ get_mark_preset <- function(mark) {
                      primary_feature = "Intensity",
                      normalize = "None"), active),
     H3K4me3 = c(list(label = "broad promoter-associated domain",
-                     stitch_distance = 5000L,
+                     stitch_distance = 0L,
                      exclude_promoter = FALSE,
                      primary_feature = "Breadth",
                      normalize = "None"), active),

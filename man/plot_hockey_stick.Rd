@@ -52,7 +52,8 @@ A ggplot object.
 }
 \description{
 Generates a ranking plot for super-domain identification. Domains are ranked by
-their feature value; super-domains are highlighted and the cutoff (and, when
+their feature value with rank 1 = highest (ROSE convention), so the x axis
+runs from the strongest/broadest domain at the left; super-domains are highlighted and the cutoff (and, when
 available, the replicate-cutoff stability band) is drawn from the object's
 stored provenance. In per-group mode the cutoff is shown as a descriptive
 median replicate cutoff, never as the unique biological decision boundary.
